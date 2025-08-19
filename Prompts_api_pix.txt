@@ -1,0 +1,1919 @@
+### USER
+Analise a documentação em anexo e aguarde novas instruções
+
+### ASSISTANT
+Análise realizada. Estou pronto para receber novas instruções com base na documentação fornecida. Por favor, informe o que gostaria de consultar ou qual ação deseja realizar.
+
+### USER
+Analise no arquivo enviado o controller Gerenciamento de recorrências que possui 4 apis e gere os casos de teste no padrão gherkin por funcionalidade considerando as regras presente no documento.Não economize tokens para o retorno.
+
+
+### ASSISTANT
+Com base na análise do conteúdo fornecido, identifiquei que a **tag `Rec`** (Gerenciamento de Recorrências) reúne endpoints destinados ao gerenciamento de recorrências no contexto da API Pix. A documentação menciona que essa tag possui **quatro APIs principais**, que podem ser inferidas pelos métodos HTTP e seus respectivos endpoints:
+
+1. `POST /rec` – Criar uma recorrência  
+2. `GET /rec/{idRec}` – Consultar uma recorrência específica  
+3. `PATCH /rec/{idRec}` – Revisar (atualizar) uma recorrência  
+4. `GET /rec` – Consultar lista de recorrências  
+
+Além disso, o documento detalha:
+- Regras de formação do `idRec`
+- Estrutura dos payloads
+- Códigos de erro comuns (ex: `RecOperacaoInvalida`, `RecNaoEncontrada`, `RecConsultaInvalida`)
+- Campos obrigatórios e validações
+- Fluxos de status (`CRIADA`, `APROVADA`, `REJEITADA`, `EXPIRADA`, `CANCELADA`)
+- Regras semânticas (ex: datas, periodicidade, tentativas pós-vencimento)
+
+Abaixo, apresento os **casos de teste no padrão Gherkin (Given-When-Then)** para cada uma das 4 funcionalidades, cobrindo cenários de sucesso, falha e validações conforme as regras descritas no documento.
+
+---
+
+## ✅ **Funcionalidade: Criar Recorrência (`POST /rec`)**
+
+### **Cenário 1: Criar recorrência válida com sucesso**
+```gherkin
+Dado que o usuário possui permissão "rec.write"
+E o payload da recorrência está completo e válido
+E o campo "rec.calendario.dataInicial" é igual ou posterior à data de criação
+E o campo "rec.calendario.dataFinal" é posterior à data inicial
+E o campo "rec.calendario.periodicidade" segue o schema definido
+Quando uma requisição POST for enviada para /rec com os dados válidos
+Então a API deve retornar status 201 (Created)
+E o corpo da resposta deve conter o objeto "RecGerada"
+E o campo "idRec" deve seguir o padrão "RRxxxxxxxx... ou RNxxxxxxxx..."
+```
+
+### **Cenário 2: Erro ao criar recorrência com data inicial anterior à data de criação**
+```gherkin
+Dado que o payload contém um campo "rec.calendario.dataInicial" anterior à data atual
+Quando uma requisição POST for enviada para /rec
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo "RecOperacaoInvalida"
+E a violação deve indicar: "O campo rec.calendario.dataInicial é anterior à data de criação da recorrência"
+```
+
+### **Cenário 3: Erro ao criar recorrência com data final anterior à data inicial**
+```gherkin
+Dado que o payload contém "rec.calendario.dataFinal" anterior a "rec.calendario.dataInicial"
+Quando uma requisição POST for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a violação deve indicar: "O campo rec.calendario.dataFinal é anterior ao campo rec.calendario.dataInicial"
+```
+
+### **Cenário 4: Erro ao criar recorrência com periodicidade inválida**
+```gherkin
+Dado que o campo "rec.calendario.periodicidade" não respeita o schema definido
+Quando uma requisição POST for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a violação deve indicar: "O campo rec.calendario.periodicidade não respeita o schema"
+```
+
+### **Cenário 5: Erro ao criar recorrência sem campos obrigatórios**
+```gherkin
+Dado que o payload está incompleto (ex: falta "calendario", "vinculo" ou "retentativa")
+Quando uma requisição POST for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a mensagem deve indicar violação de schema
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Recorrência Específica (`GET /rec/{idRec}`)**
+
+### **Cenário 6: Consultar recorrência existente com sucesso**
+```gherkin
+Dado que existe uma recorrência com idRec "RR1234567820240115abcdefghijk"
+E o usuário possui permissão "rec.read"
+Quando uma requisição GET for enviada para /rec/RR1234567820240115abcdefghijk
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto "RecCompletaPesquisada"
+E os campos como "status", "recebedor", "calendario" devem estar presentes
+```
+
+### **Cenário 7: Erro ao consultar recorrência inexistente**
+```gherkin
+Dado que não existe recorrência com idRec "RN9999999920240115zzzzzzzzz"
+Quando uma requisição GET for enviada para /rec/RN9999999920240115zzzzzzzzz
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo "RecNaoEncontrada"
+E o campo "detail" deve indicar que a recorrência não foi encontrada
+```
+
+### **Cenário 8: Erro ao consultar recorrência com idRec mal formatado**
+```gherkin
+Dado que o idRec fornecido tem menos de 29 caracteres ou contém caracteres inválidos
+Quando uma requisição GET for enviada para /rec/ID_INVALIDO
+Então a API deve retornar status 400
+E o erro deve ser "RecConsultaInvalida"
+E a violação deve indicar que o parâmetro não respeita o schema
+```
+
+### **Cenário 9: Consultar recorrência expirada, cancelada ou rejeitada**
+```gherkin
+Dado que a recorrência com idRec "RR1234567820230101expired01" está com status "EXPIRADA"
+Quando uma requisição GET for enviada para /rec/RR1234567820230101expired01
+Então a API pode retornar status 200 (opcionalmente permitido)
+Ou retornar status 400 com erro "RecPayloadOperacaoInvalida"
+E o detalhe deve indicar que a recorrência está expirada, rejeitada ou cancelada
+```
+
+---
+
+## ✅ **Funcionalidade: Revisar Recorrência (`PATCH /rec/{idRec}`)**
+
+### **Cenário 10: Cancelar recorrência válida com sucesso**
+```gherkin
+Dado que existe uma recorrência com idRec "RR1234567820240115abcdefghijk" e status "APROVADA"
+E o payload de revisão contém apenas { "status": "CANCELADA" }
+E o usuário possui permissão "rec.write"
+Quando uma requisição PATCH for enviada para /rec/RR1234567820240115abcdefghijk
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter a recorrência atualizada com status "CANCELADA"
+E o histórico de atualizações deve incluir o novo status com timestamp
+```
+
+### **Cenário 11: Erro ao tentar cancelar recorrência já cancelada**
+```gherkin
+Dado que a recorrência já está com status "CANCELADA"
+Quando uma requisição PATCH for enviada com { "status": "CANCELADA" }
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a violação deve indicar que a operação não é permitida para o estado atual
+```
+
+### **Cenário 12: Erro ao tentar alterar campo imutável (ex: txid) em recorrência rejeitada**
+```gherkin
+Dado que a recorrência está com status "REJEITADA"
+E o payload tenta alterar o campo "dadosJornada.txid"
+Quando uma requisição PATCH for enviada
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a violação deve indicar: "O campo rec.dadosJornada.txid não pode ser alterado quando a recorrência está REJEITADA ou CANCELADA"
+```
+
+### **Cenário 13: Erro ao enviar payload inválido na revisão**
+```gherkin
+Dado que o payload de PATCH contém campos fora do schema (ex: campo desconhecido ou tipo errado)
+Quando uma requisição PATCH for enviada para /rec/{idRec}
+Então a API deve retornar status 400
+E o erro deve ser "RecOperacaoInvalida"
+E a mensagem deve listar as violações de schema
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Lista de Recorrências (`GET /rec`)**
+
+### **Cenário 14: Consultar lista de recorrências com filtros válidos**
+```gherkin
+Dado que o usuário possui permissão "rec.read"
+E os parâmetros da consulta incluem:
+  | parâmetro           | valor                     |
+  | inicio              | 2024-04-01T00:00:00Z     |
+  | fim                 | 2024-04-30T23:59:59Z     |
+  | paginacao.paginaAtual | 0                       |
+  | paginacao.itensPorPagina | 100                  |
+Quando uma requisição GET for enviada para /rec com esses parâmetros
+Então a API deve retornar status 200
+E o corpo deve conter "RecsConsultadas"
+E o campo "recs" deve ser um array com até 100 recorrências
+E o campo "paginacao.quantidadeTotalDeItens" deve refletir o total
+```
+
+### **Cenário 15: Erro ao usar ambos CPF e CNPJ como filtros simultaneamente**
+```gherkin
+Dado que os parâmetros da consulta incluem tanto "cpf" quanto "cnpj"
+Quando uma requisição GET for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecConsultaInvalida"
+E a violação deve indicar: "ambos os parâmetros cpf e cnpj estão preenchidos"
+```
+
+### **Cenário 16: Erro ao informar data fim anterior à data início**
+```gherkin
+Dado que o parâmetro "fim" é "2023-01-01T00:00:00Z"
+E o parâmetro "inicio" é "2024-01-01T00:00:00Z"
+Quando uma requisição GET for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecConsultaInvalida"
+E a violação deve indicar: "o timestamp fim é anterior ao timestamp inicio"
+```
+
+### **Cenário 17: Erro ao usar número de página negativo**
+```gherkin
+Dado que o parâmetro "paginacao.paginaAtual" é -1
+Quando uma requisição GET for enviada para /rec
+Então a API deve retornar status 400
+E o erro deve ser "RecConsultaInvalida"
+E a violação deve indicar: "o parâmetro paginacao.paginaAtual é negativo"
+```
+
+### **Cenário 18: Consultar recorrências por status específico**
+```gherkin
+Dado que o filtro "status" é definido como "APROVADA"
+E existem recorrências com esse status no intervalo
+Quando uma requisição GET for enviada para /rec?status=APROVADA
+Então a API deve retornar status 200
+E todas as recorrências no array "recs" devem ter status "APROVADA"
+```
+
+### **Cenário 19: Consultar recorrências por convênio**
+```gherkin
+Dado que o filtro "recebedor.convenio" é "CONV123"
+E existem recorrências associadas a esse convênio
+Quando uma requisição GET for enviada para /rec?recebedor.convenio=CONV123
+Então a API deve retornar status 200
+E todas as recorrências retornadas devem ter o convênio "CONV123"
+```
+
+---
+
+## 🔁 **Observações Gerais e Regras de Negócio Aplicadas**
+
+### **Regras do `idRec`:**
+- Formato: `RAxxxxxxxxyyyyMMddkkkkkkkkkkk` (29 caracteres)
+- `R`: fixo
+- `A`: `R` (permite retentativas) ou `N` (não permite)
+- `xxxxxxxx`: ISPB do recebedor (8 dígitos)
+- `yyyyMMdd`: data de criação
+- `kkkkkkkkkkk`: sequência aleatória (11 caracteres)
+- Case sensitive
+
+### **Status Válidos:**
+- `CRIADA`, `APROVADA`, `REJEITADA`, `EXPIRADA`, `CANCELADA`
+
+### **Códigos de Erro Comuns:**
+- `400 RecOperacaoInvalida` → Erro de schema ou semântica
+- `404 RecNaoEncontrada` → ID inexistente
+- `400 RecConsultaInvalida` → Filtros inválidos
+- `400 RecPayloadOperacaoInvalida` → Recorrência expirada/cancelada/rejeitada
+
+### **Permissões OAuth2 Necessárias:**
+- `rec.write` → para POST e PATCH
+- `rec.read` → para GET
+
+---
+
+Se desejar, posso gerar:
+- Planilha de testes (CSV/Excel)
+- Scripts de automação (ex: Postman, Cypress, RestAssured)
+- Dados de exemplo para cada cenário
+- Diagrama de estados da recorrência
+
+Deseja continuar com alguma dessas extensões?
+
+### USER
+Planilha de testes (CSV/Excel)
+
+### ASSISTANT
+Com base na análise detalhada do arquivo fornecido e nos casos de teste no padrão Gherkin gerados anteriormente, estou gerando agora uma **planilha de testes completa** no formato estruturado, pronta para exportação como **CSV ou Excel**.
+
+A planilha inclui os seguintes campos:
+
+| ID do Caso | Funcionalidade | Título do Caso | Descrição | Pré-condições | Passos (Given-When-Then) | Dados de Entrada | Saída Esperada | Código HTTP Esperado | Tipo de Teste | Prioridade | Tags |
+
+---
+
+### ✅ **Planilha de Testes - Gerenciamento de Recorrências (API Pix)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-REC-001,POST /rec,Criar recorrência válida com sucesso,Criar uma nova recorrência com todos os campos obrigatórios e válidos,Usuário com permissão "rec.write",Dado que o usuário possui permissão "rec.write" e o payload está completo e válido; Quando uma requisição POST for enviada para /rec com os dados válidos; Então a API deve retornar status 201 e o objeto "RecGerada",{"idRec":"RR1234567820240115abcdefghijk","vinculo":{"devedor":{"cpf":"12345678909","nome":"Fulano"}},"calendario":{"dataInicial":"2024-10-01","dataFinal":"2025-10-01","periodicidade":"MENSAL"},"politicaRetentativa":"PERMITE_3R_7D"},Status 201, RecGerada retornada,201,Positivo,Alta,"criacao, sucesso"
+TC-REC-002,POST /rec,Erro ao criar recorrência com data inicial anterior à data de criação,Validar que não é permitido criar recorrência com data inicial no passado,Payload com dataInicial < data atual,Dado que o campo "rec.calendario.dataInicial" é anterior à data atual; Quando uma requisição POST for enviada; Então deve retornar erro 400,{"calendario":{"dataInicial":"2023-01-01"}},Erro RecOperacaoInvalida com detalhe sobre dataInicial,400,Negativo,Alta,"validacao, data"
+TC-REC-003,POST /rec,Erro ao criar recorrência com data final anterior à data inicial,Validar consistência temporal entre dataInicial e dataFinal,Payload com dataFinal < dataInicial,Dado que dataFinal é anterior à dataInicial; Quando POST /rec; Então retornar erro 400,{"calendario":{"dataInicial":"2024-10-01","dataFinal":"2024-09-01"}},Erro RecOperacaoInvalida com detalhe sobre dataFinal,400,Negativo,Alta,"validacao, data"
+TC-REC-004,POST /rec,Erro ao criar recorrência com periodicidade inválida,Validar schema de periodicidade,Payload com periodicidade fora do enum,Dado que periodicidade não está em ["MENSAL", "ANUAL"]; Quando POST /rec; Então retornar erro 400,{"calendario":{"periodicidade":"SEMANAL"}},Erro RecOperacaoInvalida com detalhe sobre schema,400,Negativo,Média,"validacao, schema"
+TC-REC-005,POST /rec,Erro ao criar recorrência sem campos obrigatórios,Validar campos obrigatórios ausentes,Payload incompleto,Dado que falta campo "calendario"; Quando POST /rec; Então retornar erro 400,{},Erro RecOperacaoInvalida por violação de schema,400,Negativo,Alta,"schema, obrigatorio"
+TC-REC-006,GET /rec/{idRec},Consultar recorrência existente com sucesso,Recuperar detalhes de uma recorrência válida,Recorrência com idRec existente,Dado que existe uma recorrência com idRec "RR123..."; Quando GET /rec/RR123...; Então retornar 200 e objeto completo,"idRec=RR1234567820240115abcdefghijk",Objeto RecCompletaPesquisada retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-REC-007,GET /rec/{idRec},Erro ao consultar recorrência inexistente,Validar comportamento para ID não encontrado,ID não registrado no sistema,Dado que não existe recorrência com idRec fornecido; Quando GET /rec/RN999...; Então retornar 404,"idRec=RN9999999920240115zzzzzzzzz",Erro RecNaoEncontrada,404,Negativo,Alta,"consulta, nao-encontrado"
+TC-REC-008,GET /rec/{idRec},Erro ao consultar recorrência com idRec mal formatado,Validar formato do idRec,ID com menos de 29 caracteres ou caracteres inválidos,Dado que idRec tem formato inválido; Quando GET /rec/ID_INVALIDO; Então retornar 400,"idRec=ID_INVALIDO",Erro RecConsultaInvalida por schema,400,Negativo,Média,"validacao, formato"
+TC-REC-009,GET /rec/{idRec},Consultar recorrência expirada,rejeitada ou cancelada,Verificar se é possível consultar recorrência encerrada,Recorrência com status EXPIRADA,Dado que a recorrência está com status "EXPIRADA"; Quando GET /rec/RRexpired...; Então retornar 200 ou 400 conforme política,"idRec=RR1234567820230101expired01",Retorno 200 OU erro RecPayloadOperacaoInvalida,200 ou 400,Edge Case,Média,"edge, status"
+TC-REC-010,PATCH /rec/{idRec},Cancelar recorrência válida com sucesso,Alterar status de recorrência para CANCELADA,Recorrência com status APROVADA e permissão "rec.write",Dado que a recorrência está APROVADA; Quando PATCH /rec/{idRec} com {"status": "CANCELADA"}; Então retornar 200 e status atualizado,"idRec=RR123..., payload={""status"": ""CANCELADA""}",Recorrência com status CANCELADA,200,Positivo,Alta,"cancelamento, sucesso"
+TC-REC-011,PATCH /rec/{idRec},Erro ao cancelar recorrência já cancelada,Evitar operação redundante,Recorrência já com status CANCELADA,Dado que a recorrência já está CANCELADA; Quando PATCH com {"status": "CANCELADA"}; Então retornar 400,"idRec=RRcancelada..., payload={""status"": ""CANCELADA""}",Erro RecOperacaoInvalida por estado inválido,400,Negativo,Alta,"validacao, estado"
+TC-REC-012,PATCH /rec/{idRec},Erro ao alterar campo imutável em recorrência rejeitada,Tentar modificar campo proibido após rejeição,Recorrência com status REJEITADA,Dado que a recorrência está REJEITADA; Quando PATCH tentar alterar txid; Então retornar 400,"payload={""dadosJornada"":{""txid"":""novo_txid""}}",Erro RecOperacaoInvalida por campo imutável,400,Negativo,Alta,"imutabilidade, validacao"
+TC-REC-013,PATCH /rec/{idRec},Erro ao enviar payload inválido na revisão,Validar schema do PATCH,Payload com campo desconhecido ou tipo errado,Dado que o payload contém campo inválido; Quando PATCH /rec/{idRec}; Então retornar 400,"payload={""status"": ""INVALIDO""}",Erro RecOperacaoInvalida por schema,400,Negativo,Média,"schema, validacao"
+TC-REC-014,GET /rec,Consultar lista de recorrências com filtros válidos,Obter lista paginada com parâmetros corretos,Filtros respeitam RFC 3339 e regras de negócio,Dado que os filtros estão válidos; Quando GET /rec?inicio=...&fim=...; Então retornar 200 e lista paginada,"inicio=2024-04-01T00:00:00Z, fim=2024-04-30T23:59:59Z",Lista RecsConsultadas com paginacao,200,Positivo,Alta,"consulta, lista"
+TC-REC-015,GET /rec,Erro ao usar CPF e CNPJ simultaneamente,Restrição de filtro exclusivo,Usuário tenta filtrar por CPF e CNPJ,Dado que ambos cpf e cnpj estão preenchidos; Quando GET /rec; Então retornar 400,"cpf=123..., cnpj=456...",Erro RecConsultaInvalida por conflito de filtros,400,Negativo,Alta,"filtro, exclusivo"
+TC-REC-016,GET /rec,Erro ao informar data fim anterior à data início,Validar consistência temporal dos filtros,fim < inicio,Dado que fim < inicio; Quando GET /rec; Então retornar 400,"inicio=2024-01-01, fim=2023-01-01",Erro RecConsultaInvalida por ordem de datas,400,Negativo,Alta,"validacao, data"
+TC-REC-017,GET /rec,Erro ao usar número de página negativo,Validar paginação,Página atual < 0,Dado que paginacao.paginaAtual = -1; Quando GET /rec; Então retornar 400,"paginaAtual=-1",Erro RecConsultaInvalida por página inválida,400,Negativo,Média,"paginacao, validacao"
+TC-REC-018,GET /rec,Consultar recorrências por status específico,Filtrar por status APROVADA,Existem recorrências com status APROVADA,Dado que filtro status = APROVADA; Quando GET /rec?status=APROVADA; Então todas as recs devem ter status APROVADA,"status=APROVADA",Lista com todas APROVADAS,200,Positivo,Média,"filtro, status"
+TC-REC-019,GET /rec,Consultar recorrências por convênio,Filtrar por campo recebedor.convenio,Convênio existe no sistema,Dado que filtro por convenio = "CONV123"; Quando GET /rec?recebedor.convenio=CONV123; Então todas as recs devem ter esse convenio,"recebedor.convenio=CONV123",Lista com convenio correto,200,Positivo,Média,"filtro, convenio"
+```
+
+---
+
+### 📥 Como usar esta planilha:
+
+- **Formato**: CSV (pode ser aberto no Excel, Google Sheets, LibreOffice, etc.)
+- **Codificação**: UTF-8
+- **Delimitador**: Vírgula (`,`)
+- **Campos**:
+  - `ID do Caso`: Identificador único do caso de teste.
+  - `Funcionalidade`: Endpoint ou operação testada.
+  - `Título do Caso`: Descrição clara do objetivo.
+  - `Descrição`: Contexto do teste.
+  - `Pré-condições`: Estado necessário antes da execução.
+  - `Passos`: Sequência Given-When-Then.
+  - `Dados de Entrada`: Payload ou parâmetros da requisição.
+  - `Saída Esperada`: Comportamento esperado.
+  - `Código HTTP Esperado`: Status code esperado.
+  - `Tipo de Teste`: Positivo, Negativo, Edge Case.
+  - `Prioridade`: Alta, Média.
+  - `Tags`: Classificação para filtragem (ex: validacao, sucesso, filtro).
+
+---
+
+### 📁 Exportação
+
+Para salvar como **CSV**:
+
+1. Copie todo o bloco acima (de `ID do Caso` até o último caso).
+2. Cole em um arquivo de texto.
+3. Salve como `testes_recorrencias.csv` com codificação UTF-8.
+
+Para usar no **Excel**:
+- Abra o Excel.
+- Vá em **Dados → Obter Dados Externos → Do Texto/CSV**.
+- Selecione o arquivo e importe com delimitador vírgula.
+
+---
+
+Se desejar, posso gerar:
+- A mesma planilha em formato **XLSX** (via código Python ou JSON para conversão).
+- Scripts de automação (Postman, RestAssured, Pytest).
+- Arquivo `.feature` para Cucumber.
+
+Deseja que eu gere um desses formatos adicionais?
+
+### USER
+Agora faça a mesma coisa com o controller Gerenciamento de solicitações de recorrências
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `SolicRec`** (Gerenciamento de Solicitações de Recorrências) reúne endpoints destinados ao gerenciamento de **solicitações de confirmação de recorrência** por parte do PSP recebedor ao usuário pagador. Essas solicitações são etapas intermediárias no processo de ativação de uma recorrência, onde o usuário pagador deve autorizar explicitamente o débito recorrente.
+
+A documentação indica que esta funcionalidade possui **dois endpoints principais**:
+
+1. `POST /solicrec` – Criar uma nova solicitação de recorrência  
+2. `GET /solicrec/{idSolicRec}` – Consultar uma solicitação específica  
+3. `PATCH /solicrec/{idSolicRec}` – Revisar (ex: cancelar) uma solicitação de recorrência  
+
+> ⚠️ Observação: Apesar de o documento mencionar apenas `POST`, `GET` e `PATCH`, o `PATCH` é usado exclusivamente para **cancelamento** da solicitação, e apenas se estiver em status permitido.
+
+---
+
+## ✅ **Funcionalidade: Criar Solicitação de Recorrência (`POST /solicrec`)**
+
+### **Cenário 1: Criar solicitação de recorrência válida com sucesso**
+```gherkin
+Dado que o usuário possui permissão "solicrec.write"
+E o payload da solicitação está completo e válido
+E o campo "solicrec.calendario.dataExpiracaoSolicitacao" é posterior à data de criação
+E o campo "solicrec.destinatario" contém dados bancários válidos e CPF ou CNPJ
+E não existe outra solicitação ativa com o mesmo "idRec"
+Quando uma requisição POST for enviada para /solicrec com os dados válidos
+Então a API deve retornar status 201 (Created)
+E o corpo da resposta deve conter o objeto "SolicRecCompleta"
+E o campo "status" deve ser "CRIADA"
+E o histórico de atualizações ("atualizacao") deve conter o primeiro registro com status "CRIADA" e timestamp atual
+```
+
+### **Cenário 2: Erro ao criar solicitação com data de expiração anterior à data de criação**
+```gherkin
+Dado que o payload contém "solicrec.calendario.dataExpiracaoSolicitacao" anterior à data atual
+Quando uma requisição POST for enviada para /solicrec
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo "SolicRecOperacaoInvalida"
+E a violação deve indicar: "O campo solicrec.calendario.dataExpiracaoSolicitacao é anterior à data de criação da solicitação"
+```
+
+### **Cenário 3: Erro ao criar solicitação com destinatário inválido (schema)**
+```gherkin
+Dado que o campo "solicrec.destinatario" não respeita o schema (ex: falta agência, conta ou CPF/CNPJ)
+Quando uma requisição POST for enviada para /solicrec
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a mensagem deve indicar violação no objeto "destinatario"
+```
+
+### **Cenário 4: Erro ao criar solicitação duplicada (mesmo idRec ativo)**
+```gherkin
+Dado que já existe uma solicitação com "idRec" igual e status "CRIADA", "ENVIADA" ou "RECEBIDA"
+Quando uma nova requisição POST for enviada com o mesmo "idRec"
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a violação deve indicar: "Existe uma solicitação ativa referente ao mesmo solicrec.idRec"
+```
+
+### **Cenário 5: Erro ao omitir campos obrigatórios**
+```gherkin
+Dado que o payload está incompleto (ex: falta "calendario", "destinatario" ou "idRec")
+Quando uma requisição POST for enviada para /solicrec
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a mensagem deve indicar violação de schema
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Solicitação de Recorrência (`GET /solicrec/{idSolicRec}`)**
+
+### **Cenário 6: Consultar solicitação existente com sucesso**
+```gherkin
+Dado que existe uma solicitação com idSolicRec "SC1234567820240115abcdefghijk"
+E o usuário possui permissão "solicrec.read"
+Quando uma requisição GET for enviada para /solicrec/SC1234567820240115abcdefghijk
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto "SolicRecCompleta"
+E os campos como "status", "destinatario", "calendario" devem estar presentes
+E o histórico "atualizacao" deve conter todos os eventos registrados
+```
+
+### **Cenário 7: Erro ao consultar solicitação inexistente**
+```gherkin
+Dado que não existe solicitação com idSolicRec "SC9999999920240115zzzzzzzzz"
+Quando uma requisição GET for enviada para /solicrec/SC9999999920240115zzzzzzzzz
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo "SolicRecNaoEncontrada"
+E o campo "detail" deve indicar que a solicitação não foi encontrada
+```
+
+### **Cenário 8: Erro ao consultar solicitação com idSolicRec mal formatado**
+```gherkin
+Dado que o idSolicRec fornecido tem menos de 29 caracteres ou não segue o padrão alfanumérico
+Quando uma requisição GET for enviada para /solicrec/ID_INVALIDO
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecConsultaInvalida"
+E a violação deve indicar que o parâmetro não respeita o schema
+```
+
+---
+
+## ✅ **Funcionalidade: Revisar Solicitação de Recorrência (`PATCH /solicrec/{idSolicRec}`)**
+
+### **Cenário 9: Cancelar solicitação válida com sucesso**
+```gherkin
+Dado que existe uma solicitação com idSolicRec "SC1234567820240115abcdefghijk" e status "CRIADA"
+E o usuário possui permissão "solicrec.write"
+E o payload contém apenas { "status": "CANCELADA" }
+Quando uma requisição PATCH for enviada para /solicrec/SC1234567820240115abcdefghijk
+Então a API deve retornar status 201 (Created)
+E o corpo da resposta deve conter a solicitação atualizada com status "CANCELADA"
+E o histórico de atualizações deve incluir o novo status com timestamp
+```
+
+### **Cenário 10: Erro ao tentar cancelar solicitação já cancelada**
+```gherkin
+Dado que a solicitação já está com status "CANCELADA"
+Quando uma requisição PATCH for enviada com { "status": "CANCELADA" }
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a violação deve indicar que o cancelamento não é permitido para o estado atual
+```
+
+### **Cenário 11: Erro ao tentar cancelar solicitação com status não permitido**
+```gherkin
+Dado que a solicitação está com status "ACEITA" ou "REJEITADA"
+Quando uma requisição PATCH for enviada com { "status": "CANCELADA" }
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a violação deve indicar: "Não é possível cancelar uma solicitação com status diferente de CRIADA, ENVIADA ou RECEBIDA"
+```
+
+### **Cenário 12: Erro ao enviar payload inválido na revisão**
+```gherkin
+Dado que o payload de PATCH contém campo inválido (ex: "status": "INVALIDO") ou campo adicional
+Quando uma requisição PATCH for enviada para /solicrec/{idSolicRec}
+Então a API deve retornar status 400
+E o erro deve ser "SolicRecOperacaoInvalida"
+E a mensagem deve listar as violações de schema
+```
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato do `idSolicRec`:**
+- Formato: `SCxxxxxxxxyyyyMMddkkkkkkkkkkk` (29 caracteres)
+- `SC`: prefixo fixo
+- `xxxxxxxx`: ISPB do recebedor (8 dígitos)
+- `yyyyMMdd`: data de criação
+- `kkkkkkkkkkk`: sequência aleatória (11 caracteres)
+- Case sensitive
+
+### **Status Válidos da Solicitação:**
+- `CRIADA`
+- `ENVIADA`
+- `RECEBIDA`
+- `REJEITADA`
+- `ACEITA`
+- `EXPIRADA`
+- `CANCELADA`
+
+> Apenas solicitações com status `CRIADA`, `ENVIADA` ou `RECEBIDA` podem ser canceladas via `PATCH`.
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `SolicRecOperacaoInvalida` | Payload inválido, data expirada, schema violado | 400 | POST, PATCH |
+| `SolicRecNaoEncontrada` | Solicitação não encontrada | 404 | GET, PATCH |
+| `SolicRecConsultaInvalida` | ID mal formatado | 400 | GET |
+
+### **Permissões OAuth2 Necessárias:**
+- `solicrec.write` → para `POST` e `PATCH`
+- `solicrec.read` → para `GET`
+
+---
+
+## 📊 **Planilha de Testes - Gerenciamento de Solicitações de Recorrências (CSV)**
+
+Abaixo está a planilha no formato CSV, pronta para exportação:
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-SOLICREC-001,POST /solicrec,Criar solicitação válida com sucesso,Criar uma nova solicitação de recorrência com todos os campos obrigatórios e válidos,Usuário com permissão "solicrec.write",Dado que o payload está completo e válido; Quando POST /solicrec; Então retornar 201 e objeto completo,"{""idRec"": ""RN123..."", ""calendario"": {""dataExpiracaoSolicitacao"": ""2024-12-01T10:00:00Z""}, ""destinatario"": {""cpf"": ""123..."", ""agencia"": ""1234"", ""conta"": ""5678"", ""ispbParticipante"": ""12345678""}}",Status 201, SolicRecCompleta retornada,201,Positivo,Alta,"criacao, sucesso"
+TC-SOLICREC-002,POST /solicrec,Erro ao criar solicitação com data de expiração no passado,Validar que dataExpiracaoSolicitacao não pode ser anterior à data atual,Payload com dataExpiracao < data atual,Dado que dataExpiracaoSolicitacao é anterior à data atual; Quando POST /solicrec; Então retornar 400,"{""calendario"":{""dataExpiracaoSolicitacao"":""2023-01-01T00:00:00Z""}}",Erro SolicRecOperacaoInvalida com detalhe sobre data,400,Negativo,Alta,"validacao, data"
+TC-SOLICREC-003,POST /solicrec,Erro ao criar solicitação com destinatário inválido,Validar schema do destinatário,Payload com destinatário faltando agência ou CPF,Dado que destinatario está incompleto; Quando POST /solicrec; Então retornar 400,"{""destinatario"":{""conta"":""5678""}}",Erro SolicRecOperacaoInvalida por schema,400,Negativo,Alta,"validacao, schema"
+TC-SOLICREC-004,POST /solicrec,Erro ao criar solicitação duplicada,Evitar múltiplas solicitações ativas para o mesmo idRec,Existe solicitação ativa com mesmo idRec,Dado que já existe solicitação ativa com idRec; Quando POST com mesmo idRec; Então retornar 400,"{""idRec"":""RN123..."", ...}",Erro SolicRecOperacaoInvalida por duplicidade,400,Negativo,Alta,"duplicidade, unico"
+TC-SOLICREC-005,POST /solicrec,Erro ao omitir campos obrigatórios,Validar campos obrigatórios ausentes,Payload incompleto,Dado que falta campo calendario; Quando POST /solicrec; Então retornar 400,{},Erro SolicRecOperacaoInvalida por schema,400,Negativo,Alta,"schema, obrigatorio"
+TC-SOLICREC-006,GET /solicrec/{idSolicRec},Consultar solicitação existente com sucesso,Recuperar detalhes de uma solicitação válida,Solicitação com idSolicRec existente,Dado que a solicitação existe; Quando GET /solicrec/SC123...; Então retornar 200 e objeto completo,"idSolicRec=SC1234567820240115abcdefghijk",Objeto SolicRecCompleta retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-SOLICREC-007,GET /solicrec/{idSolicRec},Erro ao consultar solicitação inexistente,Validar comportamento para ID não encontrado,ID não registrado no sistema,Dado que não existe solicitação com idSolicRec; Quando GET /solicrec/SC999...; Então retornar 404,"idSolicRec=SC9999999920240115zzzzzzzzz",Erro SolicRecNaoEncontrada,404,Negativo,Alta,"consulta, nao-encontrado"
+TC-SOLICREC-008,GET /solicrec/{idSolicRec},Erro ao consultar solicitação com idSolicRec mal formatado,Validar formato do idSolicRec,ID com menos de 29 caracteres ou caracteres inválidos,Dado que idSolicRec tem formato inválido; Quando GET /solicrec/ID_INVALIDO; Então retornar 400,"idSolicRec=ID_INVALIDO",Erro SolicRecConsultaInvalida por schema,400,Negativo,Média,"validacao, formato"
+TC-SOLICREC-009,PATCH /solicrec/{idSolicRec},Cancelar solicitação válida com sucesso,Alterar status de solicitação para CANCELADA,Solicitação com status CRIADA e permissão "solicrec.write",Dado que a solicitação está CRIADA; Quando PATCH /solicrec/{idSolicRec} com {"status": "CANCELADA"}; Então retornar 201 e status atualizado,"idSolicRec=SC123..., payload={""status"": ""CANCELADA""}",Solicitação com status CANCELADA,201,Positivo,Alta,"cancelamento, sucesso"
+TC-SOLICREC-010,PATCH /solicrec/{idSolicRec},Erro ao cancelar solicitação já cancelada,Evitar operação redundante,Solicitação já com status CANCELADA,Dado que a solicitação já está CANCELADA; Quando PATCH com {"status": "CANCELADA"}; Então retornar 400,"idSolicRec=SCcancelada..., payload={""status"": ""CANCELADA""}",Erro SolicRecOperacaoInvalida por estado inválido,400,Negativo,Alta,"validacao, estado"
+TC-SOLICREC-011,PATCH /solicrec/{idSolicRec},Erro ao cancelar solicitação com status não permitido,Tentar cancelar solicitação já aceita ou rejeitada,Solicitação com status ACEITA,Dado que a solicitação está ACEITA; Quando PATCH com {"status": "CANCELADA"}; Então retornar 400,"idSolicRec=SCaceita..., payload={""status"": ""CANCELADA""}",Erro SolicRecOperacaoInvalida por status não permitido,400,Negativo,Alta,"fluxo, validacao"
+TC-SOLICREC-012,PATCH /solicrec/{idSolicRec},Erro ao enviar payload inválido na revisão,Validar schema do PATCH,Payload com campo inválido,Dado que o payload contém status inválido; Quando PATCH /solicrec/{idSolicRec}; Então retornar 400,"payload={""status"": ""INVALIDO""}",Erro SolicRecOperacaoInvalida por schema,400,Negativo,Média,"schema, validacao"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Salve como CSV**: Copie todo o bloco acima e salve com codificação UTF-8 e extensão `.csv`.
+- **Importe no Excel/Google Sheets**: Use o delimitador de vírgula.
+- **Filtros úteis**: Use as colunas `Tags`, `Prioridade` e `Tipo de Teste` para organizar execuções.
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de estados da solicitação de recorrência
+
+Deseja que eu gere algum desses artefatos?
+
+### USER
+Faça o mesmo levantamento para o controller Gerenciamento de cobranças associadas a uma recorrência e também nao economize tokens.
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `CobR`** (Gerenciamento de Cobranças Associadas a uma Recorrência) reúne endpoints destinados ao **gerenciamento de cobranças recorrentes individuais** que são geradas a partir de uma recorrência previamente configurada. Essas cobranças representam as tentativas de pagamento periódicas vinculadas ao ciclo da recorrência.
+
+Este controller possui **quatro endpoints principais**, conforme descrito no documento:
+
+1. `POST /cobr/{txid}` – Criar ou atualizar uma cobrança recorrente específica  
+2. `GET /cobr/{txid}` – Consultar uma cobrança recorrente específica  
+3. `PATCH /cobr/{txid}` – Revisar (alterar status) uma cobrança recorrente  
+4. `GET /cobr` – Consultar lista de cobranças recorrentes com filtros  
+
+Abaixo, apresento uma análise completa com **casos de teste no padrão Gherkin (Given-When-Then)** para cada funcionalidade, seguida de uma **planilha de testes estruturada em CSV**, considerando todas as regras de negócio, validações, códigos de erro, fluxos de status e restrições presentes na documentação.
+
+---
+
+## ✅ **Funcionalidade: Criar ou Atualizar Cobrança Recorrente (`POST /cobr/{txid}`)**
+
+### **Cenário 1: Criar cobrança recorrente válida com sucesso**
+```gherkin
+Dado que o usuário possui permissão "cobr.write"
+E o `txid` fornecido está no formato válido (32 caracteres alfanuméricos)
+E o payload da cobrança recorrente está completo e respeita o schema `CobRSolicitada`
+E o campo `cobr.calendario.dataDeVencimento` é igual ou posterior à data de criação
+E o campo `cobr.valor.original` está no formato decimal válido (ex: "100.00")
+E o campo `cobr.chave` é um identificador válido de recebedor (CPF/CNPJ, e-mail, telefone, aleatória)
+Quando uma requisição POST for enviada para /cobr/{txid} com os dados válidos
+Então a API deve retornar status 201 (Created)
+E o corpo da resposta deve conter o objeto `CobRGerada`
+E o campo `status` deve ser "ATIVA"
+E o campo `revisao` deve ser 0
+E o campo `idRec` deve estar presente e ser válido
+```
+
+### **Cenário 2: Erro ao criar cobrança com data de vencimento anterior à data de criação**
+```gherkin
+Dado que o payload contém `cobr.calendario.dataDeVencimento` anterior à data atual
+Quando uma requisição POST for enviada para /cobr/{txid}
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo `CobROperacaoInvalida`
+E a violação deve indicar: "O campo cobr.calendario.dataDeVencimento é anterior à data de criação da cobrança"
+```
+
+### **Cenário 3: Erro ao criar cobrança com valor inválido**
+```gherkin
+Dado que o campo `cobr.valor.original` está no formato incorreto (ex: "abc", "100", "100.000")
+Quando uma requisição POST for enviada para /cobr/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "O objeto cobr.valor não respeita o schema"
+```
+
+### **Cenário 4: Erro ao criar cobrança com chave Pix inválida**
+```gherkin
+Dado que o campo `cobr.chave` contém um valor que não é um identificador válido (ex: string aleatória não formatada)
+Quando uma requisição POST for enviada para /cobr/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "O campo cobr.chave não respeita o schema"
+```
+
+### **Cenário 5: Erro ao criar cobrança com txid já existente e não ATIVA**
+```gherkin
+Dado que já existe uma cobrança com o mesmo `txid` e status "REMOVIDA_PELO_PSP_RECEBEDOR"
+Quando uma nova requisição POST for enviada com o mesmo `txid`
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "A cobrança já existe, não está no status ATIVA, e a presente requisição busca alterá-la"
+```
+
+### **Cenário 6: Atualizar cobrança recorrente existente com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` válido e status "ATIVA"
+E o payload contém apenas campos alteráveis (ex: `devedor`, `valor`, `solicitacaoPagador`)
+Quando uma requisição POST for enviada para /cobr/{txid} com os dados atualizados
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobRevisada`
+E o campo `revisao` deve ser incrementado em 1
+E o histórico de atualizações deve refletir a mudança
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Cobrança Recorrente Específica (`GET /cobr/{txid}`)**
+
+### **Cenário 7: Consultar cobrança recorrente existente com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` "fb2761260e554ad593c7226beb5cb650"
+E o usuário possui permissão "cobr.read"
+Quando uma requisição GET for enviada para /cobr/fb2761260e554ad593c7226beb5cb650
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobRCompleta`
+E os campos como `idRec`, `calendario`, `valor`, `status`, `revisao` devem estar presentes
+```
+
+### **Cenário 8: Erro ao consultar cobrança inexistente**
+```gherkin
+Dado que não existe cobrança com `txid` "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+Quando uma requisição GET for enviada para /cobr/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo `CobRNaoEncontrado`
+E o campo `detail` deve indicar que a cobrança não foi encontrada
+```
+
+### **Cenário 9: Erro ao consultar cobrança com revisão inexistente**
+```gherkin
+Dado que a cobrança existe, mas a `revisao` solicitada é 999 (inexistente)
+Quando uma requisição GET for enviada para /cobr/{txid}?revisao=999
+Então a API deve retornar status 400
+E o erro deve ser `CobRConsultaInvalida`
+E a violação deve indicar: "O parâmetro revisao corresponde a uma revisão inexistente"
+```
+
+### **Cenário 10: Consultar cobrança com revisão específica**
+```gherkin
+Dado que a cobrança tem múltiplas revisões (revisao 0, 1, 2)
+E o parâmetro `revisao=1` é fornecido
+Quando uma requisição GET for enviada para /cobr/{txid}?revisao=1
+Então a API deve retornar status 200
+E o corpo deve conter a versão da cobrança correspondente à revisão 1
+```
+
+---
+
+## ✅ **Funcionalidade: Revisar Cobrança Recorrente (`PATCH /cobr/{txid}`)**
+
+### **Cenário 11: Cancelar cobrança recorrente com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` válido e status "ATIVA"
+E o payload contém apenas { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR" }
+E o usuário possui permissão "cobr.write"
+Quando uma requisição PATCH for enviada para /cobr/{txid}
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobRevisada`
+E o campo `status` deve ser atualizado para "REMOVIDA_PELO_USUARIO_RECEBEDOR"
+E o campo `revisao` deve ser incrementado
+```
+
+### **Cenário 12: Erro ao tentar cancelar cobrança já cancelada**
+```gherkin
+Dado que a cobrança já está com status "REMOVIDA_PELO_USUARIO_RECEBEDOR"
+Quando uma requisição PATCH for enviada com { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR" }
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "A cobrança não está mais com o status ATIVA"
+```
+
+### **Cenário 13: Erro ao tentar alterar múltiplos campos ao cancelar**
+```gherkin
+Dado que a cobrança está com status "ATIVA"
+E o payload contém { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR", "valor": { "original": "200.00" } }
+Quando uma requisição PATCH for enviada
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "Não faz sentido remover uma cobrança ao mesmo tempo em que se realizam alterações"
+```
+
+### **Cenário 14: Erro ao enviar status inválido no PATCH**
+```gherkin
+Dado que o payload contém { "status": "INVALIDO" }
+Quando uma requisição PATCH for enviada para /cobr/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobROperacaoInvalida`
+E a violação deve indicar: "O campo cobr.status não respeita o schema"
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Lista de Cobranças Recorrentes (`GET /cobr`)**
+
+### **Cenário 15: Consultar lista de cobranças com filtros válidos**
+```gherkin
+Dado que o usuário possui permissão "cobr.read"
+E os parâmetros da consulta incluem:
+  | parâmetro           | valor                     |
+  | inicio              | 2024-04-01T00:00:00Z     |
+  | fim                 | 2024-04-30T23:59:59Z     |
+  | idRec               | RR123...                  |
+  | status              | ATIVA                     |
+  | paginacao.paginaAtual | 0                       |
+  | paginacao.itensPorPagina | 100                  |
+Quando uma requisição GET for enviada para /cobr com esses parâmetros
+Então a API deve retornar status 200
+E o corpo deve conter `CobsRConsultadas`
+E o campo `cobsv` deve ser um array com até 100 cobranças
+E o campo `paginacao.quantidadeTotalDeItens` deve refletir o total
+```
+
+### **Cenário 16: Erro ao usar ambos CPF e CNPJ como filtros simultaneamente**
+```gherkin
+Dado que os parâmetros da consulta incluem tanto "cpf" quanto "cnpj"
+Quando uma requisição GET for enviada para /cobr
+Então a API deve retornar status 400
+E o erro deve ser `CobRConsultaInvalida`
+E a violação deve indicar: "ambos os parâmetros cpf e cnpj estão preenchidos"
+```
+
+### **Cenário 17: Erro ao informar data fim anterior à data início**
+```gherkin
+Dado que o parâmetro "fim" é "2023-01-01T00:00:00Z"
+E o parâmetro "inicio" é "2024-01-01T00:00:00Z"
+Quando uma requisição GET for enviada para /cobr
+Então a API deve retornar status 400
+E o erro deve ser `CobRConsultaInvalida`
+E a violação deve indicar: "o timestamp fim é anterior ao timestamp inicio"
+```
+
+### **Cenário 18: Erro ao usar número de página negativo**
+```gherkin
+Dado que o parâmetro "paginacao.paginaAtual" é -1
+Quando uma requisição GET for enviada para /cobr
+Então a API deve retornar status 400
+E o erro deve ser `CobRConsultaInvalida`
+E a violação deve indicar: "o parâmetro paginacao.paginaAtual é negativo"
+```
+
+### **Cenário 19: Consultar cobranças por status específico**
+```gherkin
+Dado que o filtro "status" é definido como "ATIVA"
+E existem cobranças com esse status no intervalo
+Quando uma requisição GET for enviada para /cobr?status=ATIVA
+Então a API deve retornar status 200
+E todas as cobranças no array `cobsv` devem ter status "ATIVA"
+```
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato do `txid`:**
+- 32 caracteres alfanuméricos
+- Gerado pelo usuário recebedor
+- Único por cobrança
+
+### **Status Válidos da Cobrança Recorrente:**
+- `ATIVA`
+- `REMOVIDA_PELO_USUARIO_RECEBEDOR`
+- `REMOVIDA_PELO_PSP_RECEBEDOR`
+
+> Apenas cobranças com status `ATIVA` podem ser alteradas ou canceladas.
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `CobROperacaoInvalida` | Payload inválido, data de vencimento no passado, schema violado | 400 | POST, PATCH |
+| `CobRNaoEncontrado` | Cobrança não encontrada | 404 | GET |
+| `CobRConsultaInvalida` | Parâmetros de consulta inválidos | 400 | GET (lista e revisão) |
+
+### **Permissões OAuth2 Necessárias:**
+- `cobr.write` → para `POST` e `PATCH`
+- `cobr.read` → para `GET`
+
+### **Revisão (`revisao`):**
+- Sempre começa em 0
+- Incrementa em 1 a cada alteração
+- Obrigatório em respostas de `GET`
+
+---
+
+## 📊 **Planilha de Testes - Gerenciamento de Cobranças Recorrentes (CSV)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-COBR-001,POST /cobr/{txid},Criar cobrança recorrente válida com sucesso,Criar uma nova cobrança recorrente com todos os campos obrigatórios e válidos,Usuário com permissão "cobr.write",Dado que o payload está completo e válido; Quando POST /cobr/{txid}; Então retornar 201 e objeto completo,"{""calendario"":{""dataDeVencimento"":""2024-12-01""}, ""valor"":{""original"":""100.00""}, ""chave"":""usuario@banco.com"", ""idRec"":""RR123...""}",Status 201, CobRGerada retornada,201,Positivo,Alta,"criacao, sucesso"
+TC-COBR-002,POST /cobr/{txid},Erro ao criar cobrança com data de vencimento no passado,Validar que dataDeVencimento não pode ser anterior à data atual,Payload com dataDeVencimento < data atual,Dado que dataDeVencimento é anterior à data atual; Quando POST /cobr/{txid}; Então retornar 400,"{""calendario"":{""dataDeVencimento"":""2023-01-01""}}",Erro CobROperacaoInvalida com detalhe sobre data,400,Negativo,Alta,"validacao, data"
+TC-COBR-003,POST /cobr/{txid},Erro ao criar cobrança com valor inválido,Validar formato do valor original,Payload com valor mal formatado,Dado que valor.original está inválido; Quando POST /cobr/{txid}; Então retornar 400,"{""valor"":{""original"":""abc""}}",Erro CobROperacaoInvalida por schema,400,Negativo,Alta,"validacao, valor"
+TC-COBR-004,POST /cobr/{txid},Erro ao criar cobrança com chave Pix inválida,Validar chave Pix fornecida,Payload com chave inválida,Dado que chave não é um identificador válido; Quando POST /cobr/{txid}; Então retornar 400,"{""chave"":""chave_invalida""}",Erro CobROperacaoInvalida por chave,400,Negativo,Alta,"validacao, chave"
+TC-COBR-005,POST /cobr/{txid},Erro ao criar cobrança com txid já existente e não ATIVA,Cobrança já existe com status diferente de ATIVA,Existe cobrança com mesmo txid e status REMOVIDA,Dado que cobrança já existe; Quando POST com mesmo txid; Então retornar 400,"txid=fb2761260e554ad593c7226beb5cb650",Erro CobROperacaoInvalida por estado,400,Negativo,Alta,"duplicidade, estado"
+TC-COBR-006,POST /cobr/{txid},Atualizar cobrança recorrente existente com sucesso,Modificar dados de cobrança ativa,Existe cobrança com status ATIVA,Dado que cobrança está ATIVA; Quando POST com dados atualizados; Então retornar 200 e revisão incrementada,"txid=..., payload={""valor"":{""original"":""150.00""}}",Status 200, revisao=1,200,Positivo,Alta,"atualizacao, sucesso"
+TC-COBR-007,GET /cobr/{txid},Consultar cobrança existente com sucesso,Recuperar detalhes de uma cobrança válida,Cobrança com txid existente,Dado que a cobrança existe; Quando GET /cobr/{txid}; Então retornar 200 e objeto completo,"txid=fb2761260e554ad593c7226beb5cb650",Objeto CobRCompleta retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-COBR-008,GET /cobr/{txid},Erro ao consultar cobrança inexistente,Validar comportamento para txid não encontrado,txid não registrado no sistema,Dado que não existe cobrança com txid; Quando GET /cobr/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; Então retornar 404,"txid=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",Erro CobRNaoEncontrado,404,Negativo,Alta,"consulta, nao-encontrado"
+TC-COBR-009,GET /cobr/{txid},Erro ao consultar cobrança com revisão inexistente,Validar existência da revisão solicitada,Revisão 999 não existe,Dado que revisão solicitada é inexistente; Quando GET /cobr/{txid}?revisao=999; Então retornar 400,"revisao=999",Erro CobRConsultaInvalida por revisão,400,Negativo,Média,"consulta, revisao"
+TC-COBR-010,GET /cobr/{txid},Consultar cobrança com revisão específica,Recuperar versão histórica da cobrança,Existem múltiplas revisões,Dado que existem revisões; Quando GET /cobr/{txid}?revisao=1; Então retornar versão correta,"revisao=1",Versão da cobrança com revisao=1,200,Positivo,Média,"historico, consulta"
+TC-COBR-011,PATCH /cobr/{txid},Cancelar cobrança com sucesso,Alterar status para REMOVIDA_PELO_USUARIO_RECEBEDOR,Cobrança com status ATIVA,Dado que cobrança está ATIVA; Quando PATCH com status cancelamento; Então retornar 200 e status atualizado,"txid=..., payload={""status"":""REMOVIDA_PELO_USUARIO_RECEBEDOR""}",Status atualizado para REMOVIDA,200,Positivo,Alta,"cancelamento, sucesso"
+TC-COBR-012,PATCH /cobr/{txid},Erro ao cancelar cobrança já cancelada,Evitar operação redundante,Cobrança já com status REMOVIDA,Dado que cobrança já está cancelada; Quando PATCH com status cancelamento; Então retornar 400,"txid=..., payload={""status"":""REMOVIDA_PELO_USUARIO_RECEBEDOR""}",Erro CobROperacaoInvalida por estado,400,Negativo,Alta,"validacao, estado"
+TC-COBR-013,PATCH /cobr/{txid},Erro ao alterar múltiplos campos ao cancelar,Impedir alterações durante cancelamento,Payload com status e valor,Dado que payload tem status e valor; Quando PATCH; Então retornar 400,"payload={""status"":""REMOVIDA..."", ""valor"":{""original"":""200.00""}}",Erro CobROperacaoInvalida por conflito,400,Negativo,Alta,"validacao, atomicidade"
+TC-COBR-014,PATCH /cobr/{txid},Erro ao enviar status inválido no PATCH,Validar enum de status,Payload com status inválido,Dado que status é inválido; Quando PATCH /cobr/{txid}; Então retornar 400,"payload={""status"":""INVALIDO""}",Erro CobROperacaoInvalida por schema,400,Negativo,Média,"validacao, schema"
+TC-COBR-015,GET /cobr,Consultar lista de cobranças com filtros válidos,Obter lista paginada com parâmetros corretos,Filtros respeitam RFC 3339 e regras,Dado que filtros estão válidos; Quando GET /cobr?inicio=...&fim=...; Então retornar 200 e lista paginada,"inicio=2024-04-01T00:00:00Z, fim=2024-04-30T23:59:59Z",Lista CobsRConsultadas com paginacao,200,Positivo,Alta,"consulta, lista"
+TC-COBR-016,GET /cobr,Erro ao usar CPF e CNPJ simultaneamente,Restrição de filtro exclusivo,Usuário tenta filtrar por CPF e CNPJ,Dado que ambos cpf e cnpj estão preenchidos; Quando GET /cobr; Então retornar 400,"cpf=123..., cnpj=456...",Erro CobRConsultaInvalida por conflito de filtros,400,Negativo,Alta,"filtro, exclusivo"
+TC-COBR-017,GET /cobr,Erro ao informar data fim anterior à data início,Validar consistência temporal dos filtros,fim < inicio,Dado que fim < inicio; Quando GET /cobr; Então retornar 400,"inicio=2024-01-01, fim=2023-01-01",Erro CobRConsultaInvalida por ordem de datas,400,Negativo,Alta,"validacao, data"
+TC-COBR-018,GET /cobr,Erro ao usar número de página negativo,Validar paginação,Página atual < 0,Dado que paginacao.paginaAtual = -1; Quando GET /cobr; Então retornar 400,"paginaAtual=-1",Erro CobRConsultaInvalida por página inválida,400,Negativo,Média,"paginacao, validacao"
+TC-COBR-019,GET /cobr,Consultar cobranças por status específico,Filtrar por status ATIVA,Existem cobranças com status ATIVA,Dado que filtro status = ATIVA; Quando GET /cobr?status=ATIVA; Então todas as cobranças devem ter status ATIVA,"status=ATIVA",Lista com todas ATIVAS,200,Positivo,Média,"filtro, status"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Formato**: CSV (UTF-8, delimitador vírgula)
+- **Campos**:
+  - `ID do Caso`: Identificador único
+  - `Funcionalidade`: Endpoint
+  - `Título do Caso`: Objetivo do teste
+  - `Descrição`: Contexto
+  - `Pré-condições`: Estado inicial
+  - `Passos`: Sequência Given-When-Then
+  - `Dados de Entrada`: Payload ou parâmetros
+  - `Saída Esperada`: Comportamento esperado
+  - `Código HTTP Esperado`: Status code
+  - `Tipo de Teste`: Positivo/Negativo/Edge
+  - `Prioridade`: Alta/Média
+  - `Tags`: Classificação
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de estados da cobrança recorrente
+- Dados de exemplo para cada cenário
+
+Deseja que eu gere algum desses artefatos adicionais?
+
+### USER
+Faça o mesmo para o controller Gerenciamento de cobranças para pagamento imediato e não economize tokens na resposta.
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `Cob`** (Gerenciamento de Cobranças para Pagamento Imediato) reúne endpoints destinados ao **gerenciamento de cobranças imediatas** no âmbito da API Pix. Essas cobranças são utilizadas para a geração de QR Codes estáticos ou dinâmicos que permitem o pagamento instantâneo de um valor fixo, sem data de vencimento.
+
+Este controller possui **quatro endpoints principais**:
+
+1. `PUT /cob/{txid}` – Criar ou atualizar uma cobrança imediata  
+2. `GET /cob/{txid}` – Consultar uma cobrança imediata específica  
+3. `PATCH /cob/{txid}` – Revisar (ex: alterar status) uma cobrança imediata  
+4. `GET /cob` – Consultar lista de cobranças imediatas com filtros  
+
+A seguir, apresento uma análise completa com **casos de teste no padrão Gherkin (Given-When-Then)** para cada funcionalidade, seguida de uma **planilha de testes estruturada em CSV**, considerando todas as regras de negócio, validações, códigos de erro, fluxos de status, restrições semânticas e exemplos presentes na documentação.
+
+---
+
+## ✅ **Funcionalidade: Criar ou Atualizar Cobrança Imediata (`PUT /cob/{txid}`)**
+
+### **Cenário 1: Criar cobrança imediata válida com sucesso**
+```gherkin
+Dado que o usuário possui permissão "cob.write"
+E o `txid` fornecido está no formato válido (32 caracteres alfanuméricos)
+E o payload da cobrança imediata está completo e respeita o schema `CobSolicitada`
+E o campo `cob.calendario.expiracao` é maior que zero
+E o campo `cob.valor.original` está no formato decimal válido (ex: "100.00")
+E o campo `cob.chave` é um identificador válido de recebedor (CPF/CNPJ, e-mail, telefone, aleatória)
+Quando uma requisição PUT for enviada para /cob/{txid} com os dados válidos
+Então a API deve retornar status 201 (Created)
+E o corpo da resposta deve conter o objeto `CobGerada`
+E o campo `status` deve ser "ATIVA"
+E o campo `revisao` deve ser 0
+```
+
+### **Cenário 2: Erro ao criar cobrança com expiração menor ou igual a zero**
+```gherkin
+Dado que o payload contém `cob.calendario.expiracao` igual a 0 ou negativo
+Quando uma requisição PUT for enviada para /cob/{txid}
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo `CobOperacaoInvalida`
+E a violação deve indicar: "O campo cob.calendario.expiracao é igual ou menor que zero"
+```
+
+### **Cenário 3: Erro ao criar cobrança com valor inválido**
+```gherkin
+Dado que o campo `cob.valor.original` está no formato incorreto (ex: "abc", "100", "100.000")
+Quando uma requisição PUT for enviada para /cob/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "O objeto cob.valor não respeita o schema"
+```
+
+### **Cenário 4: Erro ao criar cobrança com chave Pix inválida**
+```gherkin
+Dado que o campo `cob.chave` contém um valor que não é um identificador válido (ex: string aleatória não formatada)
+Quando uma requisição PUT for enviada para /cob/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "O campo cob.chave não respeita o schema"
+```
+
+### **Cenário 5: Erro ao criar cobrança com txid já existente e não ATIVA**
+```gherkin
+Dado que já existe uma cobrança com o mesmo `txid` e status "REMOVIDA_PELO_PSP_RECEBEDOR"
+Quando uma nova requisição PUT for enviada com o mesmo `txid`
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "A cobrança já existe, não está no status ATIVA, e a presente requisição busca alterá-la"
+```
+
+### **Cenário 6: Atualizar cobrança imediata existente com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` válido e status "ATIVA"
+E o payload contém apenas campos alteráveis (ex: `devedor`, `valor`, `solicitacaoPagador`)
+Quando uma requisição PUT for enviada para /cob/{txid} com os dados atualizados
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobRevisada`
+E o campo `revisao` deve ser incrementado em 1
+E o histórico de atualizações deve refletir a mudança
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Cobrança Imediata Específica (`GET /cob/{txid}`)**
+
+### **Cenário 7: Consultar cobrança imediata existente com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` "7978c0c97ea847e78e8849634473c1f1"
+E o usuário possui permissão "cob.read"
+Quando uma requisição GET for enviada para /cob/7978c0c97ea847e78e8849634473c1f1
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobCompleta`
+E os campos como `calendario`, `valor`, `status`, `revisao`, `chave` devem estar presentes
+```
+
+### **Cenário 8: Erro ao consultar cobrança inexistente**
+```gherkin
+Dado que não existe cobrança com `txid` "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+Quando uma requisição GET for enviada para /cob/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo `CobNaoEncontrado`
+E o campo `detail` deve indicar que a cobrança não foi encontrada
+```
+
+---
+
+## ✅ **Funcionalidade: Revisar Cobrança Imediata (`PATCH /cob/{txid}`)**
+
+### **Cenário 9: Cancelar cobrança imediata com sucesso**
+```gherkin
+Dado que existe uma cobrança com `txid` válido e status "ATIVA"
+E o payload contém apenas { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR" }
+E o usuário possui permissão "cob.write"
+Quando uma requisição PATCH for enviada para /cob/{txid}
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `CobRevisada`
+E o campo `status` deve ser atualizado para "REMOVIDA_PELO_USUARIO_RECEBEDOR"
+E o campo `revisao` deve ser incrementado
+```
+
+### **Cenário 10: Erro ao tentar cancelar cobrança já cancelada**
+```gherkin
+Dado que a cobrança já está com status "REMOVIDA_PELO_USUARIO_RECEBEDOR"
+Quando uma requisição PATCH for enviada com { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR" }
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "A cobrança não está mais com o status ATIVA"
+```
+
+### **Cenário 11: Erro ao tentar alterar múltiplos campos ao cancelar**
+```gherkin
+Dado que a cobrança está com status "ATIVA"
+E o payload contém { "status": "REMOVIDA_PELO_USUARIO_RECEBEDOR", "valor": { "original": "200.00" } }
+Quando uma requisição PATCH for enviada
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "Não faz sentido remover uma cobrança ao mesmo tempo em que se realizam alterações"
+```
+
+### **Cenário 12: Erro ao enviar status inválido no PATCH**
+```gherkin
+Dado que o payload contém { "status": "INVALIDO" }
+Quando uma requisição PATCH for enviada para /cob/{txid}
+Então a API deve retornar status 400
+E o erro deve ser `CobOperacaoInvalida`
+E a violação deve indicar: "O campo cob.status não respeita o schema"
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Lista de Cobranças Imediatas (`GET /cob`)**
+
+### **Cenário 13: Consultar lista de cobranças com filtros válidos**
+```gherkin
+Dado que o usuário possui permissão "cob.read"
+E os parâmetros da consulta incluem:
+  | parâmetro           | valor                     |
+  | inicio              | 2024-04-01T00:00:00Z     |
+  | fim                 | 2024-04-30T23:59:59Z     |
+  | status              | ATIVA                     |
+  | paginacao.paginaAtual | 0                       |
+  | paginacao.itensPorPagina | 100                  |
+Quando uma requisição GET for enviada para /cob com esses parâmetros
+Então a API deve retornar status 200
+E o corpo deve conter `CobsConsultadas`
+E o campo `cobs` deve ser um array com até 100 cobranças
+E o campo `paginacao.quantidadeTotalDeItens` deve refletir o total
+```
+
+### **Cenário 14: Erro ao usar ambos CPF e CNPJ como filtros simultaneamente**
+```gherkin
+Dado que os parâmetros da consulta incluem tanto "cpf" quanto "cnpj"
+Quando uma requisição GET for enviada para /cob
+Então a API deve retornar status 400
+E o erro deve ser `CobConsultaInvalida`
+E a violação deve indicar: "ambos os parâmetros cpf e cnpj estão preenchidos"
+```
+
+### **Cenário 15: Erro ao informar data fim anterior à data início**
+```gherkin
+Dado que o parâmetro "fim" é "2023-01-01T00:00:00Z"
+E o parâmetro "inicio" é "2024-01-01T00:00:00Z"
+Quando uma requisição GET for enviada para /cob
+Então a API deve retornar status 400
+E o erro deve ser `CobConsultaInvalida`
+E a violação deve indicar: "o timestamp fim é anterior ao timestamp inicio"
+```
+
+### **Cenário 16: Erro ao usar número de página negativo**
+```gherkin
+Dado que o parâmetro "paginacao.paginaAtual" é -1
+Quando uma requisição GET for enviada para /cob
+Então a API deve retornar status 400
+E o erro deve ser `CobConsultaInvalida`
+E a violação deve indicar: "o parâmetro paginacao.paginaAtual é negativo"
+```
+
+### **Cenário 17: Consultar cobranças por status específico**
+```gherkin
+Dado que o filtro "status" é definido como "ATIVA"
+E existem cobranças com esse status no intervalo
+Quando uma requisição GET for enviada para /cob?status=ATIVA
+Então a API deve retornar status 200
+E todas as cobranças no array `cobs` devem ter status "ATIVA"
+```
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato do `txid`:**
+- 32 caracteres alfanuméricos
+- Gerado pelo usuário recebedor
+- Único por cobrança
+
+### **Status Válidos da Cobrança Imediata:**
+- `ATIVA`
+- `CONCLUIDA` (atribuído pelo PSP após pagamento)
+- `REMOVIDA_PELO_USUARIO_RECEBEDOR`
+- `REMOVIDA_PELO_PSP_RECEBEDOR`
+
+> Apenas cobranças com status `ATIVA` podem ser alteradas ou canceladas via `PATCH`.
+
+### **Campos Obrigatórios em `PUT /cob/{txid}`:**
+- `txid` (na URL)
+- `calendario.expiracao`
+- `valor.original`
+- `chave`
+
+### **Campos Alteráveis em `PUT`:**
+- `devedor`
+- `valor`
+- `solicitacaoPagador`
+- `infoAdicionais`
+
+### **Campos Alteráveis em `PATCH`:**
+- Apenas `status` (para `REMOVIDA_PELO_USUARIO_RECEBEDOR`)
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `CobOperacaoInvalida` | Payload inválido, expiração ≤ 0, schema violado | 400 | PUT, PATCH |
+| `CobNaoEncontrado` | Cobrança não encontrada | 404 | GET, PATCH |
+| `CobConsultaInvalida` | Parâmetros de consulta inválidos | 400 | GET (lista) |
+
+### **Permissões OAuth2 Necessárias:**
+- `cob.write` → para `PUT` e `PATCH`
+- `cob.read` → para `GET`
+
+### **Revisão (`revisao`):**
+- Sempre começa em 0
+- Incrementa em 1 a cada alteração via `PUT`
+- Não é alterado por `PATCH`
+
+---
+
+## 📊 **Planilha de Testes - Gerenciamento de Cobranças Imediatas (CSV)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-COB-001,PUT /cob/{txid},Criar cobrança imediata válida com sucesso,Criar uma nova cobrança imediata com todos os campos obrigatórios e válidos,Usuário com permissão "cob.write",Dado que o payload está completo e válido; Quando PUT /cob/{txid}; Então retornar 201 e objeto completo,"{""calendario"":{""expiracao"":3600}, ""valor"":{""original"":""100.00""}, ""chave"":""usuario@banco.com""}",Status 201, CobGerada retornada,201,Positivo,Alta,"criacao, sucesso"
+TC-COB-002,PUT /cob/{txid},Erro ao criar cobrança com expiração menor ou igual a zero,Validar que expiração deve ser maior que zero,Payload com expiração ≤ 0,Dado que expiração é 0 ou negativa; Quando PUT /cob/{txid}; Então retornar 400,"{""calendario"":{""expiracao"":0}}",Erro CobOperacaoInvalida com detalhe sobre expiração,400,Negativo,Alta,"validacao, tempo"
+TC-COB-003,PUT /cob/{txid},Erro ao criar cobrança com valor inválido,Validar formato do valor original,Payload com valor mal formatado,Dado que valor.original está inválido; Quando PUT /cob/{txid}; Então retornar 400,"{""valor"":{""original"":""abc""}}",Erro CobOperacaoInvalida por schema,400,Negativo,Alta,"validacao, valor"
+TC-COB-004,PUT /cob/{txid},Erro ao criar cobrança com chave Pix inválida,Validar chave Pix fornecida,Payload com chave inválida,Dado que chave não é um identificador válido; Quando PUT /cob/{txid}; Então retornar 400,"{""chave"":""chave_invalida""}",Erro CobOperacaoInvalida por chave,400,Negativo,Alta,"validacao, chave"
+TC-COB-005,PUT /cob/{txid},Erro ao criar cobrança com txid já existente e não ATIVA,Cobrança já existe com status diferente de ATIVA,Existe cobrança com mesmo txid e status REMOVIDA,Dado que cobrança já existe; Quando PUT com mesmo txid; Então retornar 400,"txid=7978c0c97ea847e78e8849634473c1f1",Erro CobOperacaoInvalida por estado,400,Negativo,Alta,"duplicidade, estado"
+TC-COB-006,PUT /cob/{txid},Atualizar cobrança imediata existente com sucesso,Modificar dados de cobrança ativa,Existe cobrança com status ATIVA,Dado que cobrança está ATIVA; Quando PUT com dados atualizados; Então retornar 200 e revisão incrementada,"txid=..., payload={""valor"":{""original"":""150.00""}}",Status 200, revisao=1,200,Positivo,Alta,"atualizacao, sucesso"
+TC-COB-007,GET /cob/{txid},Consultar cobrança imediata existente com sucesso,Recuperar detalhes de uma cobrança válida,Cobrança com txid existente,Dado que a cobrança existe; Quando GET /cob/{txid}; Então retornar 200 e objeto completo,"txid=7978c0c97ea847e78e8849634473c1f1",Objeto CobCompleta retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-COB-008,GET /cob/{txid},Erro ao consultar cobrança inexistente,Validar comportamento para txid não encontrado,txid não registrado no sistema,Dado que não existe cobrança com txid; Quando GET /cob/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; Então retornar 404,"txid=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",Erro CobNaoEncontrado,404,Negativo,Alta,"consulta, nao-encontrado"
+TC-COB-009,PATCH /cob/{txid},Cancelar cobrança imediata com sucesso,Alterar status para REMOVIDA_PELO_USUARIO_RECEBEDOR,Cobrança com status ATIVA,Dado que cobrança está ATIVA; Quando PATCH com status cancelamento; Então retornar 200 e status atualizado,"txid=..., payload={""status"":""REMOVIDA_PELO_USUARIO_RECEBEDOR""}",Status atualizado para REMOVIDA,200,Positivo,Alta,"cancelamento, sucesso"
+TC-COB-010,PATCH /cob/{txid},Erro ao cancelar cobrança já cancelada,Evitar operação redundante,Cobrança já com status REMOVIDA,Dado que cobrança já está cancelada; Quando PATCH com status cancelamento; Então retornar 400,"txid=..., payload={""status"":""REMOVIDA_PELO_USUARIO_RECEBEDOR""}",Erro CobOperacaoInvalida por estado,400,Negativo,Alta,"validacao, estado"
+TC-COB-011,PATCH /cob/{txid},Erro ao alterar múltiplos campos ao cancelar,Impedir alterações durante cancelamento,Payload com status e valor,Dado que payload tem status e valor; Quando PATCH; Então retornar 400,"payload={""status"":""REMOVIDA..."", ""valor"":{""original"":""200.00""}}",Erro CobOperacaoInvalida por conflito,400,Negativo,Alta,"validacao, atomicidade"
+TC-COB-012,PATCH /cob/{txid},Erro ao enviar status inválido no PATCH,Validar enum de status,Payload com status inválido,Dado que status é inválido; Quando PATCH /cob/{txid}; Então retornar 400,"payload={""status"":""INVALIDO""}",Erro CobOperacaoInvalida por schema,400,Negativo,Média,"validacao, schema"
+TC-COB-013,GET /cob,Consultar lista de cobranças com filtros válidos,Obter lista paginada com parâmetros corretos,Filtros respeitam RFC 3339 e regras,Dado que filtros estão válidos; Quando GET /cob?inicio=...&fim=...; Então retornar 200 e lista paginada,"inicio=2024-04-01T00:00:00Z, fim=2024-04-30T23:59:59Z",Lista CobsConsultadas com paginacao,200,Positivo,Alta,"consulta, lista"
+TC-COB-014,GET /cob,Erro ao usar CPF e CNPJ simultaneamente,Restrição de filtro exclusivo,Usuário tenta filtrar por CPF e CNPJ,Dado que ambos cpf e cnpj estão preenchidos; Quando GET /cob; Então retornar 400,"cpf=123..., cnpj=456...",Erro CobConsultaInvalida por conflito de filtros,400,Negativo,Alta,"filtro, exclusivo"
+TC-COB-015,GET /cob,Erro ao informar data fim anterior à data início,Validar consistência temporal dos filtros,fim < inicio,Dado que fim < inicio; Quando GET /cob; Então retornar 400,"inicio=2024-01-01, fim=2023-01-01",Erro CobConsultaInvalida por ordem de datas,400,Negativo,Alta,"validacao, data"
+TC-COB-016,GET /cob,Erro ao usar número de página negativo,Validar paginação,Página atual < 0,Dado que paginacao.paginaAtual = -1; Quando GET /cob; Então retornar 400,"paginaAtual=-1",Erro CobConsultaInvalida por página inválida,400,Negativo,Média,"paginacao, validacao"
+TC-COB-017,GET /cob,Consultar cobranças por status específico,Filtrar por status ATIVA,Existem cobranças com status ATIVA,Dado que filtro status = ATIVA; Quando GET /cob?status=ATIVA; Então todas as cobranças devem ter status ATIVA,"status=ATIVA",Lista com todas ATIVAS,200,Positivo,Média,"filtro, status"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Formato**: CSV (UTF-8, delimitador vírgula)
+- **Campos**:
+  - `ID do Caso`: Identificador único
+  - `Funcionalidade`: Endpoint
+  - `Título do Caso`: Objetivo do teste
+  - `Descrição`: Contexto
+  - `Pré-condições`: Estado inicial
+  - `Passos`: Sequência Given-When-Then
+  - `Dados de Entrada`: Payload ou parâmetros
+  - `Saída Esperada`: Comportamento esperado
+  - `Código HTTP Esperado`: Status code
+  - `Tipo de Teste`: Positivo/Negativo/Edge
+  - `Prioridade`: Alta/Média
+  - `Tags`: Classificação
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de estados da cobrança imediata
+- Dados de exemplo para cada cenário
+
+Deseja que eu gere algum desses artefatos adicionais?
+
+### USER
+Faça o mesmo para o controller Configuração de locations para payloads de recorrências e não economize tokens no retorno.
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `PayloadLocationRec`** (Configuração de locations para payloads de recorrências) reúne endpoints destinados ao **gerenciamento de _locations_ específicas para recorrências**. Essas _locations_ são URLs únicas e seguras que servem como **pontos de acesso para o Payload JSON de uma recorrência**, permitindo que o PSP pagador recupere as informações da recorrência durante o processo de autorização pelo usuário devedor.
+
+Este controller possui **três endpoints principais**:
+
+1. `POST /locrec` – Criar uma nova _location_ para servir o payload de uma recorrência  
+2. `GET /locrec/{id}` – Consultar uma _location_ de recorrência específica  
+3. `DELETE /locrec/{id}/idRec` – Desvincular uma recorrência de uma _location_  
+
+A seguir, apresento uma análise completa com **casos de teste no padrão Gherkin (Given-When-Then)** para cada funcionalidade, seguida de uma **planilha de testes estruturada em CSV**, considerando todas as regras de negócio, validações, códigos de erro, restrições semânticas, fluxos de autorização e exemplos presentes na documentação.
+
+---
+
+## ✅ **Funcionalidade: Criar Location para Recorrência (`POST /locrec`)**
+
+### **Cenário 1: Criar location para recorrência válida com sucesso**
+```gherkin
+Dado que o usuário possui permissão "payloadlocationrec.write"
+E o payload da requisição contém apenas o campo obrigatório "tipo" com valor "rec"
+E o campo "tipo" está no enum válido ["rec"]
+Quando uma requisição POST for enviada para /locrec com os dados válidos
+Então a API deve retornar status 201 (Created)
+E o cabeçalho "Location" deve conter a URL da nova location criada
+E o corpo da resposta deve conter o objeto `PayloadLocationRecGerada`
+E o campo `id` deve ser um número inteiro positivo
+E o campo `location` deve ser uma URI válida com até 77 caracteres
+E o campo `criacao` deve estar no formato RFC 3339
+```
+
+### **Cenário 2: Erro ao criar location com tipo inválido**
+```gherkin
+Dado que o payload contém o campo "tipo" com valor "cob" (não permitido para recorrências)
+Quando uma requisição POST for enviada para /locrec
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo `PayloadLocationRecOperacaoInvalida`
+E a violação deve indicar: "O campo tipo não respeita o schema"
+```
+
+### **Cenário 3: Erro ao criar location sem o campo obrigatório "tipo"**
+```gherkin
+Dado que o payload está vazio ou não contém o campo "tipo"
+Quando uma requisição POST for enviada para /locrec
+Então a API deve retornar status 400
+E o erro deve ser `PayloadLocationRecOperacaoInvalida`
+E a violação deve indicar: "O campo tipo é obrigatório"
+```
+
+### **Cenário 4: Erro ao criar location com campo adicional não permitido**
+```gherkin
+Dado que o payload contém campos além de "tipo" (ex: "txid", "idRec", "outroCampo")
+Quando uma requisição POST for enviada para /locrec
+Então a API deve retornar status 400
+E o erro deve ser `PayloadLocationRecOperacaoInvalida`
+E a violação deve indicar: "A requisição contém campos não permitidos"
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Location de Recorrência (`GET /locrec/{id}`)**
+
+### **Cenário 5: Consultar location de recorrência existente com sucesso**
+```gherkin
+Dado que existe uma location com `id` "12069"
+E o usuário possui permissão "payloadlocationrec.read"
+Quando uma requisição GET for enviada para /locrec/12069
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `PayloadLocationRecCompleta`
+E os campos `id`, `location`, `tipo`, `criacao` devem estar presentes
+E se a recorrência já foi vinculada, o campo `idRec` também deve estar presente
+```
+
+### **Cenário 6: Consultar location de recorrência sem recorrência vinculada**
+```gherkin
+Dado que a location existe, mas ainda não foi vinculada a uma recorrência
+Quando uma requisição GET for enviada para /locrec/12069
+Então a API deve retornar status 200
+E o corpo da resposta deve conter `PayloadLocationRecGerada`
+E o campo `idRec` não deve estar presente
+```
+
+### **Cenário 7: Erro ao consultar location inexistente**
+```gherkin
+Dado que não existe uma location com `id` "99999"
+Quando uma requisição GET for enviada para /locrec/99999
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo `PayloadLocationRecNaoEncontrado`
+E o campo `detail` deve indicar que a location não foi encontrada
+```
+
+### **Cenário 8: Erro ao consultar location com ID mal formatado**
+```gherkin
+Dado que o `id` fornecido não é um identificador válido (ex: string vazia, caracteres especiais)
+Quando uma requisição GET for enviada para /locrec/ID_INVALIDO
+Então a API deve retornar status 400
+E o erro deve ser `PayloadLocationRecConsultaInvalida`
+E a violação deve indicar que o parâmetro não respeita o schema
+```
+
+---
+
+## ✅ **Funcionalidade: Desvincular Recorrência de Location (`DELETE /locrec/{id}/idRec`)**
+
+### **Cenário 9: Desvincular recorrência de location com sucesso**
+```gherkin
+Dado que existe uma location com `id` "12069" e está vinculada a uma recorrência com `idRec` "RR123..."
+E o usuário possui permissão "payloadlocationrec.write"
+Quando uma requisição DELETE for enviada para /locrec/12069/idRec
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `PayloadLocationRecCompleta`
+E o campo `idRec` deve ser removido da resposta
+E a entidade `rec` associada não deve mais referenciar essa location
+```
+
+### **Cenário 10: Erro ao desvincular recorrência de location já desvinculada**
+```gherkin
+Dado que a location com `id` "12069" já está sem recorrência vinculada (campo `idRec` ausente)
+Quando uma requisição DELETE for enviada para /locrec/12069/idRec
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser `PayloadLocationRecNaoEncontrado`
+E o detalhe deve indicar que não há recorrência vinculada para desvincular
+```
+
+### **Cenário 11: Erro ao desvincular recorrência de location inexistente**
+```gherkin
+Dado que não existe uma location com `id` "99999"
+Quando uma requisição DELETE for enviada para /locrec/99999/idRec
+Então a API deve retornar status 404
+E o erro deve ser `PayloadLocationRecNaoEncontrado`
+E o detalhe deve indicar que a location não foi encontrada
+```
+
+### **Cenário 12: Erro ao desvincular recorrência com ID mal formatado**
+```gherkin
+Dado que o `id` da location é "ID_INVALIDO"
+Quando uma requisição DELETE for enviada para /locrec/ID_INVALIDO/idRec
+Então a API deve retornar status 400
+E o erro deve ser `PayloadLocationRecConsultaInvalida`
+E a violação deve indicar que o parâmetro não respeita o schema
+```
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato da `location`:**
+- URI com até **77 caracteres**
+- Exemplo: `pix.example.com/qr/v2/rec/2353c790eefb11eaadc10242ac120002`
+- Gerada automaticamente pelo PSP
+- Inclui um token de acesso implícito (capability URL)
+
+### **Campos do Payload de Entrada (`PayloadLocationRecSolicitada`):**
+- `tipo`: obrigatório, enum `["rec"]`
+- Não são permitidos campos adicionais
+
+### **Campos da Resposta (`PayloadLocationRecGerada` ou `PayloadLocationRecCompleta`):**
+- `id`: número inteiro (int64)
+- `location`: URI (formato `uri`, max 77)
+- `tipo`: sempre `"rec"`
+- `criacao`: timestamp RFC 3339
+- `idRec`: opcional, presente apenas após vinculação
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `PayloadLocationRecOperacaoInvalida` | Payload inválido, campo adicional, tipo incorreto | 400 | POST |
+| `PayloadLocationRecNaoEncontrado` | Location não encontrada ou sem recorrência vinculada | 404 | GET, DELETE |
+| `PayloadLocationRecConsultaInvalida` | ID mal formatado, parâmetros inválidos | 400 | GET, DELETE |
+
+### **Permissões OAuth2 Necessárias:**
+- `payloadlocationrec.write` → para `POST` e `DELETE`
+- `payloadlocationrec.read` → para `GET`
+
+### **Semântica de Desvinculação:**
+- O `DELETE /locrec/{id}/idRec` **não altera o status da recorrência**
+- Apenas remove o vínculo entre a location e a recorrência
+- A recorrência continua existindo, mas não pode mais ser acessada via essa location
+
+---
+
+## 📊 **Planilha de Testes - Configuração de Locations para Recorrências (CSV)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-LOCREC-001,POST /locrec,Criar location para recorrência com sucesso,Criar uma nova location para servir o payload de uma recorrência,Usuário com permissão "payloadlocationrec.write",Dado que o payload contém apenas "tipo": "rec"; Quando POST /locrec; Então retornar 201 e objeto completo,"{""tipo"": ""rec""}",Status 201, PayloadLocationRecGerada retornada,201,Positivo,Alta,"criacao, sucesso"
+TC-LOCREC-002,POST /locrec,Erro ao criar location com tipo inválido,Validar enum do campo tipo,Payload com tipo "cob",Dado que tipo é "cob"; Quando POST /locrec; Então retornar 400,"{""tipo"": ""cob""}",Erro PayloadLocationRecOperacaoInvalida por schema,400,Negativo,Alta,"validacao, schema"
+TC-LOCREC-003,POST /locrec,Erro ao criar location sem campo tipo,Validar obrigatoriedade do campo tipo,Payload vazio,Dado que payload está vazio; Quando POST /locrec; Então retornar 400,{},Erro PayloadLocationRecOperacaoInvalida por campo ausente,400,Negativo,Alta,"validacao, obrigatorio"
+TC-LOCREC-004,POST /locrec,Erro ao criar location com campo adicional,Impedir campos extras no payload,Payload com campo "txid",Dado que payload tem campo extra; Quando POST /locrec; Então retornar 400,"{""tipo"": ""rec"", ""txid"": ""abc""}",Erro PayloadLocationRecOperacaoInvalida por campo não permitido,400,Negativo,Média,"validacao, schema"
+TC-LOCREC-005,GET /locrec/{id},Consultar location com recorrência vinculada com sucesso,Recuperar detalhes de uma location com idRec,Location existe e tem idRec,Dado que location existe; Quando GET /locrec/12069; Então retornar 200 e idRec presente,"id=12069",Objeto PayloadLocationRecCompleta com idRec,200,Positivo,Alta,"consulta, sucesso"
+TC-LOCREC-006,GET /locrec/{id},Consultar location sem recorrência vinculada,Recuperar location antes do vínculo,Location existe mas sem idRec,Dado que location existe sem idRec; Quando GET /locrec/12069; Então retornar 200 sem idRec,"id=12069",Objeto PayloadLocationRecGerada sem idRec,200,Positivo,Média,"consulta, fluxo"
+TC-LOCREC-007,GET /locrec/{id},Erro ao consultar location inexistente,Validar comportamento para ID não encontrado,ID não registrado no sistema,Dado que não existe location com id; Quando GET /locrec/99999; Então retornar 404,"id=99999",Erro PayloadLocationRecNaoEncontrado,404,Negativo,Alta,"consulta, nao-encontrado"
+TC-LOCREC-008,GET /locrec/{id},Erro ao consultar location com ID mal formatado,Validar formato do ID,ID com caracteres inválidos,Dado que id é mal formatado; Quando GET /locrec/ID_INVALIDO; Então retornar 400,"id=ID_INVALIDO",Erro PayloadLocationRecConsultaInvalida por schema,400,Negativo,Média,"validacao, formato"
+TC-LOCREC-009,DELETE /locrec/{id}/idRec,Desvincular recorrência com sucesso,Remover vínculo entre location e recorrência,Location com idRec vinculado,Dado que idRec está vinculado; Quando DELETE /locrec/12069/idRec; Então retornar 200 sem idRec,"id=12069",Location sem idRec,200,Positivo,Alta,"desvinculacao, sucesso"
+TC-LOCREC-010,DELETE /locrec/{id}/idRec,Erro ao desvincular location já desvinculada,Evitar operação redundante,Location já sem idRec,Dado que idRec não está vinculado; Quando DELETE /locrec/12069/idRec; Então retornar 404,"id=12069",Erro PayloadLocationRecNaoEncontrado,404,Negativo,Alta,"validacao, estado"
+TC-LOCREC-011,DELETE /locrec/{id}/idRec,Erro ao desvincular recorrência de location inexistente,Validar existência da location,Location não existe,Dado que location não existe; Quando DELETE /locrec/99999/idRec; Então retornar 404,"id=99999",Erro PayloadLocationRecNaoEncontrado,404,Negativo,Alta,"desvinculacao, nao-encontrado"
+TC-LOCREC-012,DELETE /locrec/{id}/idRec,Erro ao desvincular com ID mal formatado,Validar formato do ID,ID inválido,Dado que id é mal formatado; Quando DELETE /locrec/ID_INVALIDO/idRec; Então retornar 400,"id=ID_INVALIDO",Erro PayloadLocationRecConsultaInvalida por schema,400,Negativo,Média,"validacao, formato"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Formato**: CSV (UTF-8, delimitador vírgula)
+- **Campos**:
+  - `ID do Caso`: Identificador único
+  - `Funcionalidade`: Endpoint
+  - `Título do Caso`: Objetivo do teste
+  - `Descrição`: Contexto
+  - `Pré-condições`: Estado inicial
+  - `Passos`: Sequência Given-When-Then
+  - `Dados de Entrada`: Payload ou parâmetros
+  - `Saída Esperada`: Comportamento esperado
+  - `Código HTTP Esperado`: Status code
+  - `Tipo de Teste`: Positivo/Negativo/Edge
+  - `Prioridade`: Alta/Média
+  - `Tags`: Classificação
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de estados da location de recorrência
+- Dados de exemplo para cada cenário
+
+Deseja que eu gere algum desses artefatos adicionais?
+
+### USER
+Faça o mesmo para o controller Gerenciamento de notificações de recorrências e não economize tokens na resposta.
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `WebhookRec`** (Gerenciamento de Notificações de Recorrências) reúne endpoints destinados ao **gerenciamento de webhooks para notificação de eventos relacionados a recorrências**. Esses webhooks permitem que o PSP recebedor informe o usuário recebedor sobre mudanças de status em recorrências (como criação, cancelamento, rejeição, expiração, ativação, etc.) de forma assíncrona.
+
+Este controller possui **dois endpoints principais**:
+
+1. `PUT /webhookrec` – Configurar ou atualizar a URL do webhook para notificações de recorrências  
+2. `GET /webhookrec` – Consultar a URL do webhook atualmente configurada  
+3. `DELETE /webhookrec` – Remover a configuração do webhook  
+
+A seguir, apresento uma análise completa com **casos de teste no padrão Gherkin (Given-When-Then)** para cada funcionalidade, seguida de uma **planilha de testes estruturada em CSV**, considerando todas as regras de negócio, validações, códigos de erro, restrições semânticas, formato do payload de notificação e exemplos presentes na documentação.
+
+---
+
+## ✅ **Funcionalidade: Configurar Webhook para Recorrências (`PUT /webhookrec`)**
+
+### **Cenário 1: Configurar webhook com sucesso**
+```gherkin
+Dado que o usuário possui permissão "webhookrec.write"
+E o payload da requisição contém o campo "webhookUrl" com uma URL válida (HTTPS, até 100 caracteres)
+E o domínio da URL está previamente cadastrado no PSP
+E não há um webhook ativo com a mesma URL
+Quando uma requisição PUT for enviada para /webhookrec com os dados válidos
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookRecConfigurado`
+E o campo `webhookUrl` deve ser idêntico ao enviado
+E o campo `criacao` deve estar no formato RFC 3339
+```
+
+### **Cenário 2: Erro ao configurar webhook com URL inválida (não HTTPS)**
+```gherkin
+Dado que o payload contém um campo "webhookUrl" com protocolo HTTP (não seguro)
+Quando uma requisição PUT for enviada para /webhookrec
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo `WebhookRecOperacaoInvalida`
+E a violação deve indicar: "O campo webhookUrl não respeita o schema"
+```
+
+### **Cenário 3: Erro ao configurar webhook com URL mal formatada**
+```gherkin
+Dado que o campo "webhookUrl" contém um valor que não é uma URI válida (ex: "url_invalida")
+Quando uma requisição PUT for enviada para /webhookrec
+Então a API deve retornar status 400
+E o erro deve ser `WebhookRecOperacaoInvalida`
+E a violação deve indicar: "O campo webhookUrl não respeita o schema"
+```
+
+### **Cenário 4: Erro ao configurar webhook com domínio não cadastrado**
+```gherkin
+Dado que o domínio presente em `webhookUrl` não está previamente cadastrado e autorizado no PSP
+Quando uma requisição PUT for enviada para /webhookrec
+Então a API deve retornar status 400
+E o erro deve ser `WebhookRecOperacaoInvalida`
+E a violação deve indicar: "O domínio da URL não está autorizado"
+```
+
+### **Cenário 5: Atualizar webhook existente com sucesso**
+```gherkin
+Dado que já existe um webhook configurado
+E o novo `webhookUrl` é diferente do atual, mas válido
+E o usuário possui permissão "webhookrec.write"
+Quando uma requisição PUT for enviada para /webhookrec com a nova URL
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookRecConfigurado` com a nova URL
+E o campo `criacao` deve ser mantido (não alterado)
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Webhook de Recorrências (`GET /webhookrec`)**
+
+### **Cenário 6: Consultar webhook configurado com sucesso**
+```gherkin
+Dado que existe um webhook ativo para recorrências
+E o usuário possui permissão "webhookrec.read"
+Quando uma requisição GET for enviada para /webhookrec
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookRecConfigurado`
+E os campos `webhookUrl` e `criacao` devem estar presentes
+```
+
+### **Cenário 7: Erro ao consultar webhook sem permissão**
+```gherkin
+Dado que o usuário não possui a permissão "webhookrec.read"
+Quando uma requisição GET for enviada para /webhookrec
+Então a API deve retornar status 403 (Forbidden)
+E o erro deve ser do tipo `AcessoNegado`
+E o campo `detail` deve indicar falta de permissão
+```
+
+### **Cenário 8: Consultar webhook quando nenhum está configurado**
+```gherkin
+Dado que não existe webhook configurado para recorrências
+Quando uma requisição GET for enviada para /webhookrec
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo `NaoEncontrado`
+E o campo `detail` deve indicar que o webhook não foi encontrado
+```
+
+---
+
+## ✅ **Funcionalidade: Remover Webhook de Recorrências (`DELETE /webhookrec`)**
+
+### **Cenário 9: Remover webhook com sucesso**
+```gherkin
+Dado que existe um webhook configurado
+E o usuário possui permissão "webhookrec.write"
+Quando uma requisição DELETE for enviada para /webhookrec
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookRecRemovido`
+E o campo `webhookUrl` deve conter a URL que foi removida
+E o campo `remocao` deve estar no formato RFC 3339
+```
+
+### **Cenário 10: Erro ao remover webhook já removido**
+```gherkin
+Dado que não existe webhook configurado
+Quando uma requisição DELETE for enviada para /webhookrec
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser `NaoEncontrado`
+E o detalhe deve indicar que o webhook não foi encontrado
+```
+
+### **Cenário 11: Erro ao remover webhook sem permissão**
+```gherkin
+Dado que o usuário não possui a permissão "webhookrec.write"
+Quando uma requisição DELETE for enviada para /webhookrec
+Então a API deve retornar status 403 (Forbidden)
+E o erro deve ser `AcessoNegado`
+E o detalhe deve indicar falta de autorização
+```
+
+---
+
+## 📣 **Formato da Notificação (Webhook Payload)**
+
+Quando um evento de recorrência ocorre (ex: criação, cancelamento, rejeição), o PSP envia um POST para a URL configurada com o seguinte payload:
+
+```json
+{
+  "idRec": "RR1234567820240115abcdefghijk",
+  "status": "CANCELADA",
+  "atualizacao": [
+    {
+      "status": "CANCELADA",
+      "data": "2024-05-20T10:12:07.567Z"
+    }
+  ],
+  "encerramento": {
+    "rejeicao": {
+      "codigo": "001",
+      "descricao": "Usuário não autorizou a recorrência"
+    }
+  }
+}
+```
+
+### **Regras do Webhook:**
+- Método HTTP: `POST`
+- Content-Type: `application/json`
+- Timeout: 10 segundos
+- Retentativas: até 3 vezes em caso de falha
+- O payload segue o schema `RecNotification`
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato do `webhookUrl`:**
+- Deve começar com `https://`
+- Máximo de 100 caracteres
+- Domínio deve estar previamente cadastrado no PSP
+- Não pode conter parâmetros ou fragmentos não essenciais
+
+### **Status que Geram Notificação:**
+- `CRIADA`
+- `APROVADA`
+- `REJEITADA`
+- `EXPIRADA`
+- `CANCELADA`
+- `ATIVADA`
+
+> Notificações são enviadas apenas para recorrências associadas ao usuário recebedor.
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `WebhookRecOperacaoInvalida` | URL inválida, domínio não autorizado | 400 | PUT |
+| `AcessoNegado` | Falta de permissão OAuth2 | 403 | GET, PUT, DELETE |
+| `NaoEncontrado` | Webhook não configurado | 404 | GET, DELETE |
+| `ServicoIndisponivel` | Erro temporário no PSP | 503 | Todos |
+
+### **Permissões OAuth2 Necessárias:**
+- `webhookrec.write` → para `PUT` e `DELETE`
+- `webhookrec.read` → para `GET`
+
+---
+
+## 📊 **Planilha de Testes - Gerenciamento de Notificações de Recorrências (CSV)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-WEBHOOKREC-001,PUT /webhookrec,Configurar webhook com sucesso,Configurar uma URL válida para recebimento de notificações de recorrência,Usuário com permissão "webhookrec.write",Dado que a URL é válida e o domínio está autorizado; Quando PUT /webhookrec com webhookUrl válido; Então retornar 200 e objeto configurado,"{""webhookUrl"": ""https://api.recebedor.com/webhookrec/""}",WebhookRecConfigurado retornado,200,Positivo,Alta,"configuracao, sucesso"
+TC-WEBHOOKREC-002,PUT /webhookrec,Erro ao configurar webhook com URL HTTP,Validar uso de HTTPS,Payload com URL HTTP,Dado que webhookUrl usa HTTP; Quando PUT /webhookrec; Então retornar 400,"{""webhookUrl"": ""http://api.recebedor.com/webhookrec/""}",Erro WebhookRecOperacaoInvalida por schema,400,Negativo,Alta,"validacao, segurança"
+TC-WEBHOOKREC-003,PUT /webhookrec,Erro ao configurar webhook com URL mal formatada,Validar formato da URL,URL inválida,Dado que webhookUrl é inválido; Quando PUT /webhookrec; Então retornar 400,"{""webhookUrl"": ""url_invalida""}",Erro WebhookRecOperacaoInvalida por schema,400,Negativo,Alta,"validacao, formato"
+TC-WEBHOOKREC-004,PUT /webhookrec,Erro ao configurar webhook com domínio não autorizado,Validar domínio cadastrado,Domínio não cadastrado no PSP,Dado que domínio não está autorizado; Quando PUT /webhookrec; Então retornar 400,"{""webhookUrl"": ""https://novo.recebedor.com/webhookrec/""}",Erro WebhookRecOperacaoInvalida por domínio,400,Negativo,Alta,"seguranca, validacao"
+TC-WEBHOOKREC-005,PUT /webhookrec,Atualizar webhook existente com sucesso,Alterar URL do webhook ativo,Webhook já configurado,Dado que existe webhook; Quando PUT com nova URL válida; Então retornar 200 e URL atualizada,"{""webhookUrl"": ""https://api2.recebedor.com/webhookrec/""}",WebhookRecConfigurado com nova URL,200,Positivo,Alta,"atualizacao, sucesso"
+TC-WEBHOOKREC-006,GET /webhookrec,Consultar webhook configurado com sucesso,Recuperar URL do webhook ativo,Webhook existe e usuário tem permissão,Dado que webhook está ativo; Quando GET /webhookrec; Então retornar 200 e webhookUrl,"-",WebhookRecConfigurado retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-WEBHOOKREC-007,GET /webhookrec,Erro ao consultar webhook sem permissão,Validar autorização de acesso,Usuário sem permissão "webhookrec.read",Dado que falta permissão; Quando GET /webhookrec; Então retornar 403,"-",Erro AcessoNegado,403,Negativo,Alta,"seguranca, autorizacao"
+TC-WEBHOOKREC-008,GET /webhookrec,Consultar webhook não configurado,Comportamento quando não há webhook,Webhook não configurado,Dado que não existe webhook; Quando GET /webhookrec; Então retornar 404,"-",Erro NaoEncontrado,404,Negativo,Média,"consulta, ausente"
+TC-WEBHOOKREC-009,DELETE /webhookrec,Remover webhook com sucesso,Desativar notificações de recorrência,Webhook configurado e usuário com permissão,Dado que webhook existe; Quando DELETE /webhookrec; Então retornar 200 e webhook removido,"-",WebhookRecRemovido retornado,200,Positivo,Alta,"remocao, sucesso"
+TC-WEBHOOKREC-010,DELETE /webhookrec,Erro ao remover webhook já removido,Evitar operação redundante,Webhook já removido,Dado que não existe webhook; Quando DELETE /webhookrec; Então retornar 404,"-",Erro NaoEncontrado,404,Negativo,Alta,"validacao, estado"
+TC-WEBHOOKREC-011,DELETE /webhookrec,Erro ao remover webhook sem permissão,Validar autorização de acesso,Usuário sem permissão "webhookrec.write",Dado que falta permissão; Quando DELETE /webhookrec; Então retornar 403,"-",Erro AcessoNegado,403,Negativo,Alta,"seguranca, autorizacao"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Formato**: CSV (UTF-8, delimitador vírgula)
+- **Campos**:
+  - `ID do Caso`: Identificador único
+  - `Funcionalidade`: Endpoint
+  - `Título do Caso`: Objetivo do teste
+  - `Descrição`: Contexto
+  - `Pré-condições`: Estado inicial
+  - `Passos`: Sequência Given-When-Then
+  - `Dados de Entrada`: Payload ou parâmetros
+  - `Saída Esperada`: Comportamento esperado
+  - `Código HTTP Esperado`: Status code
+  - `Tipo de Teste`: Positivo/Negativo/Edge
+  - `Prioridade`: Alta/Média
+  - `Tags`: Classificação
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de fluxo do webhook
+- Exemplo de requisição de notificação (payload de callback)
+- Planilha de monitoramento de delivery de notificações
+
+Deseja que eu gere algum desses artefatos adicionais?
+
+### USER
+Faça o mesmo para o controller Gerenciamento de notificações de cobranças recorrentes e não economize tokens na resposta.
+
+### ASSISTANT
+Com base na análise detalhada do conteúdo fornecido, identifiquei que a **tag `WebhookCobR`** (Gerenciamento de Notificações de Cobranças Recorrentes) reúne endpoints destinados ao **gerenciamento de webhooks para notificação de eventos relacionados a cobranças recorrentes**, permitindo que o PSP recebedor informe o usuário recebedor sobre mudanças de status em cobranças recorrentes (como criação, ativação, expiração, cancelamento, rejeição, pagamento, etc.) de forma assíncrona.
+
+Este controller possui **dois endpoints principais**:
+
+1. `PUT /webhookcobr` – Configurar ou atualizar a URL do webhook para notificações de cobranças recorrentes  
+2. `GET /webhookcobr` – Consultar a URL do webhook atualmente configurada  
+3. `DELETE /webhookcobr` – Remover a configuração do webhook  
+
+A seguir, apresento uma análise completa com **casos de teste no padrão Gherkin (Given-When-Then)** para cada funcionalidade, seguida de uma **planilha de testes estruturada em CSV**, considerando todas as regras de negócio, validações, códigos de erro, restrições semânticas, formato do payload de notificação e exemplos presentes na documentação.
+
+---
+
+## ✅ **Funcionalidade: Configurar Webhook para Cobranças Recorrentes (`PUT /webhookcobr`)**
+
+### **Cenário 1: Configurar webhook para cobranças recorrentes com sucesso**
+```gherkin
+Dado que o usuário possui permissão "webhookcobr.write"
+E o payload da requisição contém o campo "webhookUrl" com uma URL válida (HTTPS, até 100 caracteres)
+E o domínio da URL está previamente cadastrado no PSP
+E não há um webhook ativo com a mesma URL
+Quando uma requisição PUT for enviada para /webhookcobr com os dados válidos
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookCobRConfigurado`
+E o campo `webhookUrl` deve ser idêntico ao enviado
+E o campo `criacao` deve estar no formato RFC 3339
+```
+
+### **Cenário 2: Erro ao configurar webhook com URL inválida (não HTTPS)**
+```gherkin
+Dado que o payload contém um campo "webhookUrl" com protocolo HTTP (não seguro)
+Quando uma requisição PUT for enviada para /webhookcobr
+Então a API deve retornar status 400 (Bad Request)
+E o erro deve ser do tipo `WebhookCobROperacaoInvalida`
+E a violação deve indicar: "O campo webhookUrl não respeita o schema"
+```
+
+### **Cenário 3: Erro ao configurar webhook com URL mal formatada**
+```gherkin
+Dado que o campo "webhookUrl" contém um valor que não é uma URI válida (ex: "url_invalida")
+Quando uma requisição PUT for enviada para /webhookcobr
+Então a API deve retornar status 400
+E o erro deve ser `WebhookCobROperacaoInvalida`
+E a violação deve indicar: "O campo webhookUrl não respeita o schema"
+```
+
+### **Cenário 4: Erro ao configurar webhook com domínio não cadastrado**
+```gherkin
+Dado que o domínio presente em `webhookUrl` não está previamente cadastrado e autorizado no PSP
+Quando uma requisição PUT for enviada para /webhookcobr
+Então a API deve retornar status 400
+E o erro deve ser `WebhookCobROperacaoInvalida`
+E a violação deve indicar: "O domínio da URL não está autorizado"
+```
+
+### **Cenário 5: Atualizar webhook existente com sucesso**
+```gherkin
+Dado que já existe um webhook configurado
+E o novo `webhookUrl` é diferente do atual, mas válido
+E o usuário possui permissão "webhookcobr.write"
+Quando uma requisição PUT for enviada para /webhookcobr com a nova URL
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookCobRConfigurado` com a nova URL
+E o campo `criacao` deve ser mantido (não alterado)
+```
+
+---
+
+## ✅ **Funcionalidade: Consultar Webhook de Cobranças Recorrentes (`GET /webhookcobr`)**
+
+### **Cenário 6: Consultar webhook configurado com sucesso**
+```gherkin
+Dado que existe um webhook ativo para cobranças recorrentes
+E o usuário possui permissão "webhookcobr.read"
+Quando uma requisição GET for enviada para /webhookcobr
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookCobRConfigurado`
+E os campos `webhookUrl` e `criacao` devem estar presentes
+```
+
+### **Cenário 7: Erro ao consultar webhook sem permissão**
+```gherkin
+Dado que o usuário não possui a permissão "webhookcobr.read"
+Quando uma requisição GET for enviada para /webhookcobr
+Então a API deve retornar status 403 (Forbidden)
+E o erro deve ser do tipo `AcessoNegado`
+E o campo `detail` deve indicar falta de permissão
+```
+
+### **Cenário 8: Consultar webhook quando nenhum está configurado**
+```gherkin
+Dado que não existe webhook configurado para cobranças recorrentes
+Quando uma requisição GET for enviada para /webhookcobr
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser do tipo `NaoEncontrado`
+E o campo `detail` deve indicar que o webhook não foi encontrado
+```
+
+---
+
+## ✅ **Funcionalidade: Remover Webhook de Cobranças Recorrentes (`DELETE /webhookcobr`)**
+
+### **Cenário 9: Remover webhook com sucesso**
+```gherkin
+Dado que existe um webhook configurado
+E o usuário possui permissão "webhookcobr.write"
+Quando uma requisição DELETE for enviada para /webhookcobr
+Então a API deve retornar status 200 (OK)
+E o corpo da resposta deve conter o objeto `WebhookCobRRemovido`
+E o campo `webhookUrl` deve conter a URL que foi removida
+E o campo `remocao` deve estar no formato RFC 3339
+```
+
+### **Cenário 10: Erro ao remover webhook já removido**
+```gherkin
+Dado que não existe webhook configurado
+Quando uma requisição DELETE for enviada para /webhookcobr
+Então a API deve retornar status 404 (Not Found)
+E o erro deve ser `NaoEncontrado`
+E o detalhe deve indicar que o webhook não foi encontrado
+```
+
+### **Cenário 11: Erro ao remover webhook sem permissão**
+```gherkin
+Dado que o usuário não possui a permissão "webhookcobr.write"
+Quando uma requisição DELETE for enviada para /webhookcobr
+Então a API deve retornar status 403 (Forbidden)
+E o erro deve ser `AcessoNegado`
+E o detalhe deve indicar falta de autorização
+```
+
+---
+
+## 📣 **Formato da Notificação (Webhook Payload)**
+
+Quando um evento de cobrança recorrente ocorre (ex: criação, ativação, cancelamento, rejeição, expiração, tentativa de pagamento), o PSP envia um **POST assíncrono** para a URL configurada com o seguinte payload:
+
+```json
+{
+  "idRec": "RR1234567820240115abcdefghijk",
+  "txid": "3136957d93134f2184b369e8f1c0729d",
+  "status": "ATIVA",
+  "atualizacao": [
+    {
+      "status": "ATIVA",
+      "data": "2024-05-20T10:18:20.120Z"
+    }
+  ],
+  "tentativas": [
+    {
+      "data": "2024-05-21T08:00:00.000Z",
+      "status": "AGENDADA",
+      "endToEndId": "E12345678202406201221abcdef12345"
+    }
+  ]
+}
+```
+
+### **Campos do Payload de Notificação (`CobRNotification`):**
+- `idRec`: ID da recorrência associada
+- `txid`: Identificador único da cobrança recorrente
+- `status`: Status atual da cobrança recorrente
+- `atualizacao`: Histórico de mudanças de status
+- `tentativas`: Lista de tentativas de pagamento (agendadas, pagas, rejeitadas, etc.)
+
+### **Eventos que Geram Notificação:**
+- `CRIADA` → Cobrança criada
+- `ATIVA` → Cobrança ativada e pronta para pagamento
+- `CONCLUIDA` → Pagamento realizado com sucesso
+- `EXPIRADA` → Cobrança venceu sem pagamento
+- `REJEITADA` → Tentativa de pagamento rejeitada
+- `CANCELADA` → Cobrança cancelada pelo recebedor
+- `AGENDADA` → Nova tentativa de pagamento agendada
+
+> Notificações são enviadas apenas para cobranças recorrentes associadas ao usuário recebedor.
+
+---
+
+## 🔁 **Regras de Negócio e Observações**
+
+### **Formato do `webhookUrl`:**
+- Deve começar com `https://`
+- Máximo de 100 caracteres
+- Domínio deve estar previamente cadastrado no PSP
+- Não pode conter parâmetros ou fragmentos não essenciais
+
+### **Códigos de Erro Comuns:**
+| Erro | Significado | HTTP | Endpoint |
+|------|------------|------|--------|
+| `WebhookCobROperacaoInvalida` | URL inválida, domínio não autorizado | 400 | PUT |
+| `AcessoNegado` | Falta de permissão OAuth2 | 403 | GET, PUT, DELETE |
+| `NaoEncontrado` | Webhook não configurado | 404 | GET, DELETE |
+| `ServicoIndisponivel` | Erro temporário no PSP | 503 | Todos |
+
+### **Permissões OAuth2 Necessárias:**
+- `webhookcobr.write` → para `PUT` e `DELETE`
+- `webhookcobr.read` → para `GET`
+
+### **Semântica de Entrega:**
+- Método: `POST`
+- Content-Type: `application/json`
+- Timeout: 10 segundos
+- Retentativas: até 3 vezes em caso de falha (ex: 5xx, timeout)
+- O payload segue o schema `CobRNotification`
+
+---
+
+## 📊 **Planilha de Testes - Gerenciamento de Notificações de Cobranças Recorrentes (CSV)**
+
+```csv
+ID do Caso,Funcionalidade,Título do Caso,Descrição,Pré-condições,Passos,Dados de Entrada,Saída Esperada,Código HTTP Esperado,Tipo de Teste,Prioridade,Tags
+TC-WEBHOOKCOBR-001,PUT /webhookcobr,Configurar webhook para cobranças recorrentes com sucesso,Configurar uma URL válida para recebimento de notificações de cobranças recorrentes,Usuário com permissão "webhookcobr.write",Dado que a URL é válida e o domínio está autorizado; Quando PUT /webhookcobr com webhookUrl válido; Então retornar 200 e objeto configurado,"{""webhookUrl"": ""https://api.recebedor.com/webhookcobr/""}",WebhookCobRConfigurado retornado,200,Positivo,Alta,"configuracao, sucesso"
+TC-WEBHOOKCOBR-002,PUT /webhookcobr,Erro ao configurar webhook com URL HTTP,Validar uso de HTTPS,Payload com URL HTTP,Dado que webhookUrl usa HTTP; Quando PUT /webhookcobr; Então retornar 400,"{""webhookUrl"": ""http://api.recebedor.com/webhookcobr/""}",Erro WebhookCobROperacaoInvalida por schema,400,Negativo,Alta,"validacao, segurança"
+TC-WEBHOOKCOBR-003,PUT /webhookcobr,Erro ao configurar webhook com URL mal formatada,Validar formato da URL,URL inválida,Dado que webhookUrl é inválido; Quando PUT /webhookcobr; Então retornar 400,"{""webhookUrl"": ""url_invalida""}",Erro WebhookCobROperacaoInvalida por schema,400,Negativo,Alta,"validacao, formato"
+TC-WEBHOOKCOBR-004,PUT /webhookcobr,Erro ao configurar webhook com domínio não autorizado,Validar domínio cadastrado,Domínio não cadastrado no PSP,Dado que domínio não está autorizado; Quando PUT /webhookcobr; Então retornar 400,"{""webhookUrl"": ""https://novo.recebedor.com/webhookcobr/""}",Erro WebhookCobROperacaoInvalida por domínio,400,Negativo,Alta,"seguranca, validacao"
+TC-WEBHOOKCOBR-005,PUT /webhookcobr,Atualizar webhook existente com sucesso,Alterar URL do webhook ativo,Webhook já configurado,Dado que existe webhook; Quando PUT com nova URL válida; Então retornar 200 e URL atualizada,"{""webhookUrl"": ""https://api2.recebedor.com/webhookcobr/""}",WebhookCobRConfigurado com nova URL,200,Positivo,Alta,"atualizacao, sucesso"
+TC-WEBHOOKCOBR-006,GET /webhookcobr,Consultar webhook configurado com sucesso,Recuperar URL do webhook ativo,Webhook existe e usuário tem permissão,Dado que webhook está ativo; Quando GET /webhookcobr; Então retornar 200 e webhookUrl,"-",WebhookCobRConfigurado retornado,200,Positivo,Alta,"consulta, sucesso"
+TC-WEBHOOKCOBR-007,GET /webhookcobr,Erro ao consultar webhook sem permissão,Validar autorização de acesso,Usuário sem permissão "webhookcobr.read",Dado que falta permissão; Quando GET /webhookcobr; Então retornar 403,"-",Erro AcessoNegado,403,Negativo,Alta,"seguranca, autorizacao"
+TC-WEBHOOKCOBR-008,GET /webhookcobr,Consultar webhook quando nenhum está configurado,Comportamento quando não há webhook,Webhook não configurado,Dado que não existe webhook; Quando GET /webhookcobr; Então retornar 404,"-",Erro NaoEncontrado,404,Negativo,Média,"consulta, ausente"
+TC-WEBHOOKCOBR-009,DELETE /webhookcobr,Remover webhook com sucesso,Desativar notificações de cobranças recorrentes,Webhook configurado e usuário com permissão,Dado que webhook existe; Quando DELETE /webhookcobr; Então retornar 200 e webhook removido,"-",WebhookCobRRemovido retornado,200,Positivo,Alta,"remocao, sucesso"
+TC-WEBHOOKCOBR-010,DELETE /webhookcobr,Erro ao remover webhook já removido,Evitar operação redundante,Webhook já removido,Dado que não existe webhook; Quando DELETE /webhookcobr; Então retornar 404,"-",Erro NaoEncontrado,404,Negativo,Alta,"validacao, estado"
+TC-WEBHOOKCOBR-011,DELETE /webhookcobr,Erro ao remover webhook sem permissão,Validar autorização de acesso,Usuário sem permissão "webhookcobr.write",Dado que falta permissão; Quando DELETE /webhookcobr; Então retornar 403,"-",Erro AcessoNegado,403,Negativo,Alta,"seguranca, autorizacao"
+```
+
+---
+
+## 📥 Instruções para uso
+
+- **Formato**: CSV (UTF-8, delimitador vírgula)
+- **Campos**:
+  - `ID do Caso`: Identificador único
+  - `Funcionalidade`: Endpoint
+  - `Título do Caso`: Objetivo do teste
+  - `Descrição`: Contexto
+  - `Pré-condições`: Estado inicial
+  - `Passos`: Sequência Given-When-Then
+  - `Dados de Entrada`: Payload ou parâmetros
+  - `Saída Esperada`: Comportamento esperado
+  - `Código HTTP Esperado`: Status code
+  - `Tipo de Teste`: Positivo/Negativo/Edge
+  - `Prioridade`: Alta/Média
+  - `Tags`: Classificação
+
+---
+
+Se desejar, posso gerar:
+- Arquivo `.feature` para Cucumber
+- Scripts de automação (Postman, Pytest, etc.)
+- Diagrama de fluxo do webhook
+- Exemplo de requisição de notificação (payload de callback)
+- Planilha de monitoramento de delivery de notificações
+
+Deseja que eu gere algum desses artefatos adicionais?
