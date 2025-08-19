@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/webhookrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_webhookrec_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "webhookUrl": "https://meusistema.com.br/webhook/pix-rec",
+      "criacao": "2024-03-15T10:22:14.321Z"
+    }
+  }
+}

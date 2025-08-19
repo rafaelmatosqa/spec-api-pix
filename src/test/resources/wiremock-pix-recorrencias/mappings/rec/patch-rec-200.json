@@ -1,0 +1,66 @@
+{
+  "request": {
+    "method": "PATCH",
+    "url": "/rec/RR1234567820240115abcdefghijk",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_rec_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "equalToJson": "{\"status\": \"CANCELADA\"}",
+        "ignoreExtraElements": true
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "idRec": "RR1234567820240115abcdefghijk",
+      "status": "CANCELADA",
+      "vinculo": {
+        "contrato": "11750023",
+        "devedor": {
+          "cpf": "75633122216",
+          "nome": "Francisco da Silva"
+        }
+      },
+      "calendario": {
+        "dataInicial": "2024-03-01",
+        "periodicidade": "MENSAL"
+      },
+      "recebedor": {
+        "cnpj": "28765007802371",
+        "nome": "Startup Musical",
+        "ispbParticipante": "12345678"
+      },
+      "atualizacao": [
+        {
+          "status": "CRIADA",
+          "data": "2024-03-20T10:12:07.567Z"
+        },
+        {
+          "status": "APROVADA",
+          "data": "2024-03-21T09:15:30.120Z"
+        },
+        {
+          "status": "CANCELADA",
+          "data": "2024-04-05T14:22:10.345Z"
+        }
+      ],
+      "encerramento": {
+        "rejeicao": {
+          "codigo": "001",
+          "descricao": "Usu\u00e1rio solicitou o cancelamento da recorr\u00eancia."
+        }
+      }
+    }
+  }
+}

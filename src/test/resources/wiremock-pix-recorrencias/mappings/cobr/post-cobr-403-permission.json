@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/cobr",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer token_without_write_permission"
+      }
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/AcessoNegado",
+      "title": "Acesso negado.",
+      "status": 403,
+      "detail": "O token de acesso n\u00e3o possui escopo necess\u00e1rio: cobr.write"
+    }
+  }
+}

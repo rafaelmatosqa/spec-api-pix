@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/cobr",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_cobr_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.txid",
+        "equalTo": "3136957d93134f2184b369e8f1c0729d"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/CobExistente",
+      "title": "Cobran\u00e7a j\u00e1 existente.",
+      "status": 400,
+      "detail": "J\u00e1 existe uma cobran\u00e7a para o txid informado."
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "/webhookrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_webhookrec_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.webhookUrl",
+        "matches": "^http://"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/WebhookUrlInvalida",
+      "title": "URL do webhook inv\u00e1lida.",
+      "status": 400,
+      "detail": "A URL do webhook deve utilizar o protocolo HTTPS."
+    }
+  }
+}

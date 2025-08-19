@@ -1,0 +1,62 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/cobr/3136957d93134f2184b369e8f1c0729d",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_cobr_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "idRec": "RR1234567820240115abcdefghijk",
+      "txid": "3136957d93134f2184b369e8f1c0729d",
+      "infoAdicional": "Servi\u00e7os de Streaming de M\u00fasica e Filmes.",
+      "calendario": {
+        "criacao": "2024-04-01T14:47:29.470Z",
+        "dataDeVencimento": "2024-04-15"
+      },
+      "status": "ATIVA",
+      "valor": {
+        "original": "106.07"
+      },
+      "politicaRetentativa": "PERMITE_3R_7D",
+      "ajusteDiaUtil": true,
+      "devedor": {
+        "cep": "89256-140",
+        "cidade": "Uberl\u00e2ndia",
+        "email": "sebastiao.tavares@mail.com",
+        "logradouro": "Alameda Franco 1056",
+        "uf": "MG"
+      },
+      "recebedor": {
+        "agencia": "9708",
+        "conta": "012682",
+        "tipoConta": "CORRENTE"
+      },
+      "atualizacao": [
+        {
+          "data": "2024-04-01T14:47:29.470Z",
+          "status": "CRIADA"
+        },
+        {
+          "data": "2024-04-02T09:10:15.200Z",
+          "status": "ATIVA"
+        }
+      ],
+      "tentativas": [
+        {
+          "dataLiquidacao": "2024-04-15",
+          "tipo": "NTAG",
+          "endToEndId": "E1234567820240415123456789012",
+          "status": "AGENDADA"
+        }
+      ]
+    }
+  }
+}

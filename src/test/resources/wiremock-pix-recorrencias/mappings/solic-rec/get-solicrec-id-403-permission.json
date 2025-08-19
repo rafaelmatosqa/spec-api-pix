@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/solicrec/SC876456782024021577825445312",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer token_without_read_permission"
+      }
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/AcessoNegado",
+      "title": "Acesso negado.",
+      "status": 403,
+      "detail": "O token de acesso n\u00e3o possui escopo necess\u00e1rio: solicrec.read"
+    }
+  }
+}

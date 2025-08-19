@@ -1,0 +1,58 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/rec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_rec_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.idRec",
+        "matches": "^(RR|RN)[a-zA-Z0-9]{28}$"
+      },
+      {
+        "matchesJsonPath": "$.vinculo.devedor.cpf"
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "/rec/RR1234567820240115abcdefghijk"
+    },
+    "jsonBody": {
+      "idRec": "RR1234567820240115abcdefghijk",
+      "status": "CRIADA",
+      "vinculo": {
+        "contrato": "11750023",
+        "devedor": {
+          "cpf": "75633122216",
+          "nome": "Francisco da Silva"
+        },
+        "objeto": "Plano de Sa\u00fade Mensal"
+      },
+      "calendario": {
+        "dataInicial": "2024-03-01",
+        "periodicidade": "MENSAL"
+      },
+      "politicaRetentativa": "PERMITE_3R_7D",
+      "recebedor": {
+        "cnpj": "28765007802371",
+        "nome": "Startup Musical",
+        "ispbParticipante": "12345678"
+      },
+      "atualizacao": [
+        {
+          "status": "CRIADA",
+          "data": "2024-03-20T10:12:07.567Z"
+        }
+      ]
+    }
+  }
+}
