@@ -1,0 +1,85 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/cobr",
+    "queryParameters": {
+      "inicio": {
+        "equalTo": "2024-04-01T00:00:00Z"
+      },
+      "fim": {
+        "equalTo": "2024-04-30T23:59:59Z"
+      },
+      "idRec": {
+        "equalTo": "RR1234567820240115abcdefghijk"
+      }
+    },
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_cobr_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "parametros": {
+        "inicio": "2024-04-01T00:00:00Z",
+        "fim": "2024-04-30T23:59:59Z",
+        "idRec": "RR1234567820240115abcdefghijk",
+        "paginacao": {
+          "paginaAtual": 0,
+          "itensPorPagina": 100,
+          "quantidadeDePaginas": 1,
+          "quantidadeTotalDeItens": 2
+        }
+      },
+      "cobsr": [
+        {
+          "idRec": "RR1234567820240115abcdefghijk",
+          "txid": "3136957d93134f2184b369e8f1c0729d",
+          "status": "ATIVA",
+          "valor": {
+            "original": "106.07"
+          },
+          "calendario": {
+            "dataDeVencimento": "2024-04-15"
+          },
+          "atualizacao": [
+            {
+              "data": "2024-04-01T14:47:29.470Z",
+              "status": "CRIADA"
+            },
+            {
+              "data": "2024-04-02T09:10:15.200Z",
+              "status": "ATIVA"
+            }
+          ]
+        },
+        {
+          "idRec": "RR1234567820240115abcdefghijk",
+          "txid": "517bd858b59d458a841280b0f0a60bfa",
+          "status": "CANCELADA",
+          "valor": {
+            "original": "210.00"
+          },
+          "calendario": {
+            "dataDeVencimento": "2024-05-15"
+          },
+          "atualizacao": [
+            {
+              "data": "2024-05-01T10:00:00.000Z",
+              "status": "CRIADA"
+            },
+            {
+              "data": "2024-05-02T08:30:10.100Z",
+              "status": "CANCELADA"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

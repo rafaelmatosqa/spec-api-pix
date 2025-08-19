@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "DELETE",
+    "url": "/locrec/12069/RR123456782024011510056892226",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_payloadlocationrec_write"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "detalhe": "Recorr\u00eancia desvinculada com sucesso da location.",
+      "idLocation": 12069,
+      "idRec": "RR123456782024011510056892226"
+    }
+  }
+}

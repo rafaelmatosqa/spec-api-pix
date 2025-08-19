@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/locrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_payloadlocationrec_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.tipo",
+        "equalTo": "cob"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/PayloadLocationOperacaoInvalida",
+      "title": "PayloadLocation inválido.",
+      "status": 400,
+      "detail": "A presente requisição busca criar uma location sem respeitar o _schema_ estabelecido."
+    }
+  }
+}

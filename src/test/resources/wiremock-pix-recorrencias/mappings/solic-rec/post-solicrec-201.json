@@ -1,0 +1,74 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/solicrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_solicrec_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.idSolicRec",
+        "matches": "^SC[a-zA-Z0-9]{28}$"
+      },
+      {
+        "matchesJsonPath": "$.idRec",
+        "matches": "^(RR|RN)[a-zA-Z0-9]{28}$"
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "/solicrec/SC876456782024021577825445312"
+    },
+    "jsonBody": {
+      "idSolicRec": "SC876456782024021577825445312",
+      "idRec": "RN123456782024011577825445612",
+      "status": "CRIADA",
+      "calendario": {
+        "dataExpiracaoSolicitacao": "2024-02-20T12:17:11.926Z"
+      },
+      "destinatario": {
+        "agencia": "2569",
+        "conta": "550689",
+        "cpf": "15231470190",
+        "ispbParticipante": "91193552"
+      },
+      "atualizacao": [
+        {
+          "status": "CRIADA",
+          "data": "2024-02-15T10:18:18.618Z"
+        }
+      ],
+      "recPayload": {
+        "idRec": "RN123456782024011577825445612",
+        "vinculo": {
+          "contrato": "561238008",
+          "devedor": {
+            "cpf": "15231470190",
+            "nome": "Fulano de Tal"
+          },
+          "objeto": "Servi\u00e7os de Telecomunica\u00e7\u00f5es"
+        },
+        "calendario": {
+          "dataInicial": "2024-04-01",
+          "periodicidade": "MENSAL"
+        },
+        "valor": {
+          "valorRec": "1200.09"
+        },
+        "recebedor": {
+          "cnpj": "94370926517368",
+          "nome": "Empresa de Servi\u00e7os SA",
+          "ispbParticipante": "12345678"
+        }
+      }
+    }
+  }
+}

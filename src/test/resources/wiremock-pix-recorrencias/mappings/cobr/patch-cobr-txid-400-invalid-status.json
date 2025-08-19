@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "PATCH",
+    "url": "/cobr/517bd858b59d458a841280b0f0a60bfa",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_cobr_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "equalToJson": "{\"status\": \"CANCELADA\"}"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/CobROperacaoInvalida",
+      "title": "Opera\u00e7\u00e3o inv\u00e1lida.",
+      "status": 400,
+      "detail": "Cobran\u00e7a n\u00e3o encontra-se mais com o status ATIVA, somente cobran\u00e7as ativas podem ser revisadas."
+    }
+  }
+}

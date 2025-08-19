@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "/webhookcobr",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_webhookcobr_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.webhookUrl",
+        "absent": true
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/RequisicaoInvalida",
+      "title": "Requisi\u00e7\u00e3o com formato inv\u00e1lido.",
+      "status": 400,
+      "detail": "O campo 'webhookUrl' \u00e9 obrigat\u00f3rio e deve conter uma URL v\u00e1lida."
+    }
+  }
+}

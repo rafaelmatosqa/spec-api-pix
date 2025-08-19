@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/solicrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_solicrec_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.idRec",
+        "equalTo": "RN123456782024011577825445612"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/OperacaoInvalidaSolicRec",
+      "title": "Opera\u00e7\u00e3o inv\u00e1lida.",
+      "status": 400,
+      "detail": "J\u00e1 existe uma solicita\u00e7\u00e3o ativa referente ao mesmo idRec."
+    }
+  }
+}

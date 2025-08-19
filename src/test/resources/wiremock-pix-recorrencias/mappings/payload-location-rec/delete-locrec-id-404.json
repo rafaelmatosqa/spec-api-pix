@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "DELETE",
+    "url": "/locrec/99999/RR123456782024011510056892226",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_payloadlocationrec_write"
+      }
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/PayloadLocationRecNaoEncontrado",
+      "title": "Location n\u00e3o encontrada.",
+      "status": 404,
+      "detail": "N\u00e3o foi encontrada location para o id informado."
+    }
+  }
+}

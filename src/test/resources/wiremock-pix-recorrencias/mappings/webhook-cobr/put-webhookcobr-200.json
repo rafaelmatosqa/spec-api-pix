@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "/webhookcobr",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_webhookcobr_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.webhookUrl",
+        "matches": "^https://.*\\.com.*"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "webhookUrl": "https://meusistema.com.br/webhook/cobr"
+    }
+  }
+}

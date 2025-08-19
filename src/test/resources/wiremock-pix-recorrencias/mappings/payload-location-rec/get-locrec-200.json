@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/locrec",
+    "queryParameters": {
+      "inicio": {
+        "equalTo": "2023-12-01T00:00:00Z"
+      },
+      "fim": {
+        "equalTo": "2024-04-01T23:59:59Z"
+      },
+      "paginaAtual": {
+        "equalTo": "0"
+      },
+      "itensPorPagina": {
+        "equalTo": "100"
+      }
+    },
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_payloadlocationrec_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "parametros": {
+        "inicio": "2023-12-01T00:00:00Z",
+        "fim": "2024-04-01T23:59:59Z",
+        "paginacao": {
+          "paginaAtual": 0,
+          "itensPorPagina": 100,
+          "quantidadeDePaginas": 1,
+          "quantidadeTotalDeItens": 1
+        }
+      },
+      "loc": [
+        {
+          "id": 12069,
+          "location": "pix.example.com/qr/v2/rec/2353c790eefb11eaadc10242ac120002",
+          "criacao": "2023-12-20T12:38:28.774Z",
+          "idRec": "RR123456782024011510056892226"
+        }
+      ]
+    }
+  }
+}

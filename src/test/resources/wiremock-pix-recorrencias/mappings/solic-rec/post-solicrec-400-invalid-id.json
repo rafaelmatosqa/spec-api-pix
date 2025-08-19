@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/solicrec",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_solicrec_write"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.idSolicRec",
+        "doesNotMatch": "^SC[a-zA-Z0-9]{28}$"
+      }
+    ]
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "type": "https://pix.bcb.gov.br/api/v2/error/RequisicaoInvalida",
+      "title": "Requisi\u00e7\u00e3o com formato inv\u00e1lido.",
+      "status": 400,
+      "detail": "O campo 'idSolicRec' deve seguir o padr\u00e3o: SC + 28 caracteres alfanum\u00e9ricos (total 29)."
+    }
+  }
+}

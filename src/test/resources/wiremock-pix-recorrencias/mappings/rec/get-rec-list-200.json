@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/rec",
+    "queryParameters": {
+      "inicio": {
+        "equalTo": "2024-04-01T00:00:00Z"
+      },
+      "fim": {
+        "equalTo": "2024-04-30T23:59:59Z"
+      }
+    },
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_rec_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "parametros": {
+        "inicio": "2024-04-01T00:00:00Z",
+        "fim": "2024-04-30T23:59:59Z",
+        "paginacao": {
+          "paginaAtual": 0,
+          "itensPorPagina": 100,
+          "quantidadeDePaginas": 1,
+          "quantidadeTotalDeItens": 2
+        }
+      },
+      "recs": [
+        {
+          "idRec": "RR1234567820240401abcdefghijk",
+          "status": "ATIVA",
+          "calendario": {
+            "dataInicial": "2024-04-01",
+            "periodicidade": "MENSAL"
+          },
+          "recebedor": {
+            "nome": "Startup Musical"
+          },
+          "atualizacao": [
+            {
+              "status": "CRIADA",
+              "data": "2024-03-20T10:12:07.567Z"
+            }
+          ]
+        },
+        {
+          "idRec": "RN9876543220240415lmnopqrstuv",
+          "status": "CANCELADA",
+          "calendario": {
+            "dataInicial": "2024-04-15",
+            "periodicidade": "ANUAL"
+          },
+          "recebedor": {
+            "nome": "Academia Fit"
+          },
+          "atualizacao": [
+            {
+              "status": "CRIADA",
+              "data": "2024-04-01T11:30:00.000Z"
+            },
+            {
+              "status": "CANCELADA",
+              "data": "2024-04-02T14:10:20.100Z"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

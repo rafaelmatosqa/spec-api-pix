@@ -1,0 +1,73 @@
+{
+  "request": {
+    "method": "PATCH",
+    "url": "/solicrec/SC876456782024021577825445312",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_solicrec_write"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "equalToJson": "{\"status\": \"CANCELADA\"}",
+        "ignoreExtraElements": true
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "idSolicRec": "SC876456782024021577825445312",
+      "idRec": "RN123456782024011577825445612",
+      "status": "CANCELADA",
+      "calendario": {
+        "dataExpiracaoSolicitacao": "2024-02-20T12:17:11.926Z"
+      },
+      "destinatario": {
+        "agencia": "2569",
+        "conta": "550689",
+        "cpf": "15231470190",
+        "ispbParticipante": "91193552"
+      },
+      "atualizacao": [
+        {
+          "status": "CRIADA",
+          "data": "2024-02-15T10:18:18.618Z"
+        },
+        {
+          "status": "CANCELADA",
+          "data": "2024-02-15T10:25:30.770Z"
+        }
+      ],
+      "recPayload": {
+        "idRec": "RN123456782024011577825445612",
+        "vinculo": {
+          "contrato": "561238008",
+          "devedor": {
+            "cpf": "15231470190",
+            "nome": "Fulano de Tal"
+          },
+          "objeto": "Servi\u00e7os de Telecomunica\u00e7\u00f5es"
+        },
+        "calendario": {
+          "dataInicial": "2024-04-01",
+          "periodicidade": "MENSAL"
+        },
+        "valor": {
+          "valorRec": "1200.09"
+        },
+        "recebedor": {
+          "cnpj": "94370926517368",
+          "nome": "Empresa de Servi\u00e7os SA",
+          "ispbParticipante": "12345678"
+        }
+      }
+    }
+  }
+}

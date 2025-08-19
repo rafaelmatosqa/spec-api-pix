@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/locrec/12069",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer valid_token_with_payloadlocationrec_read"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "id": 12069,
+      "location": "pix.example.com/qr/v2/rec/2353c790eefb11eaadc10242ac120002",
+      "criacao": "2023-12-20T12:38:28.774Z",
+      "idRec": "RR123456782024011510056892226"
+    }
+  }
+}
