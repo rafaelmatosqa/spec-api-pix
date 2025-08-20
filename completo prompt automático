@@ -1,523 +1,437 @@
-Com base na análise completa do **Guia de Implementação do Pix Automático (versão 1.2)**, e atendendo ao seu pedido de **informação completa, detalhada e sem economia de tokens**, apresento abaixo um **documento técnico definitivo** sobre o Pix Automático.
+Com base no **Guia de Implementação do Pix Automático (versão 1.2)** e no conteúdo fornecido no arquivo `guia_pix_automatico.pdf`, apresento abaixo uma **análise completa e detalhada das jornadas de autorização do Pix Automático**, com foco no **contexto do usuário recebedor**.
 
-Este conteúdo é o mais completo possível, integrando:
-- **Todas as jornadas de autorização**
-- **O fluxo completo de mensagens entre PSPs** (pain.009, pain.012, pain.013, camt.054, camt.055, pacs.008)
-- **Regras de validação, cancelamento, retentativas e liquidação**
-- **Funcionalidades obrigatórias para pagador e recebedor**
-- **Papel do PSI (Open Finance)**
-- **Modelos de QR Code**
-- **Checklist de conformidade**
-- **Fluxograma Mermaid completo**
-- **Modelo de API Pix**
-- **Checklist de notificações**
-- **PDF e PNG do fluxograma (via link simulado)**
+Cada jornada é descrita com **cenários realistas, passo a passo**, destacando as **ações do recebedor**, as **interações com o PSP recebedor**, as **responsabilidades operacionais**, os **fluxos de sucesso e falha**, e as **melhores práticas** para implementação.
+
+Este documento é uma **referência estratégica e operacional** para recebedores (pessoas jurídicas, prestadores de serviços, empresas de cobrança), seus gestores financeiros e equipes de tecnologia.
 
 ---
 
-# 📘 **DOCUMENTO COMPLETO: PIX AUTOMÁTICO – GUIA TÉCNICO, OPERACIONAL E JURÍDICO**
+# 📘 **Jornadas do Pix Automático: Visão do Recebedor**
 
-> **Baseado no Guia de Implementação do Pix Automático – Versão 1.2 (29/05/2025)**  
-> **Elaborado por: Especialista em Pix | BC, PSPs, Fintechs, Open Finance**
-
----
-
-## 🔍 **1. Introdução**
-
-O **Pix Automático** é um mecanismo de **pagamento recorrente autorizado previamente** pelo usuário pagador, que permite o **débito automático** em sua conta transacional, mediante **autorização explícita** e **agendamento prévio** via infraestrutura do Sistema de Pagamentos Instantâneos (SPI).
-
-Este documento é uma **referência técnica, operacional e jurídica** para:
-- **PSPs pagadores e recebedores**
-- **Desenvolvedores de APIs**
-- **Compliance e risco operacional**
-- **Fintechs e PSIs (Prestadores de Serviço de Iniciação)**
-- **Consultores e reguladores**
+> **Baseado no Guia de Implementação do Pix Automático – Versão 1.2**  
+> **Foco: Ações, decisões e responsabilidades do usuário recebedor**
 
 ---
 
-## 🧩 **2. Etapas Fundamentais do Pix Automático**
+## 🔍 **1. Introdução: O Papel do Recebedor no Pix Automático**
 
-O processo é dividido em **6 etapas principais**:
+O **usuário recebedor** é o **iniciador do processo** de recorrência. Ele define os termos da cobrança, escolhe a jornada de autorização mais adequada ao seu modelo de negócio e interage com seu **PSP recebedor** (seu banco ou instituição de pagamento) para criar, gerir e acompanhar as recorrências.
 
-| Etapa | Descrição |
-|------|----------|
-| 1. Criação da Recorrência | Recebedor cria recorrência no PSP Recebedor |
-| 2. Autorização | Pagador confirma via 4 jornadas |
-| 3. Agendamento | PSP Recebedor envia `pain.013` |
-| 4. Liquidação | Débito automático entre 0h e 8h |
-| 5. Gestão Pós-Pagamento | Notificações, cancelamentos, retentativas |
-| 6. Devolução (MED) | Até 90 dias após o pagamento |
+O recebedor pode:
+- Ofertar o Pix Automático como forma de pagamento.
+- Escolher entre **4 jornadas de autorização**.
+- Gerir recorrências via **API Pix** ou **arquivo padronizado**.
+- Reutilizar QR Codes.
+- Oferecer autorização após um pagamento inicial.
+- Cancelar cobranças agendadas (com restrições).
+- Receber notificações de sucesso, falha e cancelamento.
 
----
-
-## ✅ **3. Etapa 1: Criação da Recorrência**
-
-### 📌 Responsável: **PSP Recebedor** (por solicitação do usuário recebedor)
-
-### 📥 Dados Obrigatórios
-
-| Campo | Descrição |
-|------|----------|
-| `idRecorrencia` | ID único: `RRxxxxxxxxyyyyMMddkkkkkkkkkkk` (29 caracteres) |
-| `formaDeIniciacao` | Sempre `AUTO` |
-| `valor` | Obrigatório para recorrências de **valor fixo** |
-| `periodicidade` | Semanal, mensal, trimestral, semestral, anual |
-| `dataInicio` | Data de início da vigência |
-| `dataFim` | Opcional. Recomenda-se alguns dias após o último pagamento |
-| `descricao` | Descrição opcional do objeto da cobrança |
-| `idObjetoCobranca` | Número do contrato, pedido, cliente |
-| `politicaRetentativa` | `S` (permite retentativas pós-vencimento) ou `N` |
-
-### 🧮 Formato do `idRecorrencia`
-
-| Prefixo | Origem | Permite NTAG? |
-|--------|--------|---------------|
-| `RR` | Criada no Pix | Sim |
-| `RN` | Criada no Pix | Não |
-| `CR` | Open Finance | Sim |
-| `CN` | Open Finance | Não |
-
-> ✅ **Regra**: A `dataFim` deve estar alguns dias após o último pagamento, para permitir retentativas.
+Este guia detalha cada jornada sob a **perspectiva do recebedor**, com **cenários completos**, **fluxos operacionais** e **recomendações práticas**.
 
 ---
 
-## 🔁 **4. Etapa 2: Autorização – As 4 Jornadas**
+## 🟦 **Jornada 1: Autorização sem QR Code, com notificação via app**
+
+### **Contexto**
+O usuário pagador entra em contato diretamente com o recebedor (por WhatsApp, ligação, e-mail) e informa que deseja pagar por **Pix Automático**.
+
+Esta jornada é ideal para:
+- Relacionamentos B2B com poucos clientes.
+- Cobranças de alto valor.
+- Empresas com atendimento personalizado.
+- Casos em que o pagador já confia na empresa.
 
 ---
 
-### 🟦 **Jornada 1: Notificação via App (sem QR Code)**
+### **Cenário 1.1: Criação e envio da solicitação de autorização**
 
-**Fluxo**: O recebedor notifica o pagador por canais externos (e-mail, WhatsApp, ligação). O PSP Recebedor inicia o processo via mensageria.
+**Como** recebedor de uma academia premium,  
+**Quero** solicitar autorização de Pix Automático a um novo aluno via notificação no app,  
+**Para que** ele possa confirmar a mensalidade recorrente sem precisar escanear QR Code.
 
-#### 🔁 Fluxo de Mensagens
+#### **Passo a Passo:**
 
-```mermaid
-sequenceDiagram
-    participant Recebedor
-    participant PSPR as PSP Recebedor
-    participant PSPC as PSP Pagador
-    participant Pagador
+1. **Acesso ao sistema do PSP recebedor**
+   - O responsável financeiro da academia acessa a plataforma do PSP (ex: internet banking corporativo ou painel de cobrança).
 
-    Recebedor->>PSPR: Cria recorrência (status: criada)
-    PSPR->>PSPC: Envia pain.009 (solicitação de confirmação)
-    PSPC->>Pagador: Notifica: "Autorizar recorrência?"
-    Pagador->>PSPC: Confirma (com autenticação)
-    PSPC->>PSPR: Envia pain.012 (status = true)
-    PSPR->>Recebedor: Informa sucesso
-```
+2. **Criação da recorrência**
+   - Informa os dados:
+     - `idRecorrencia`: `RR123456782025030100001`
+     - `formaDeIniciacao`: `AUTO`
+     - `valor`: `299,90` (fixo)
+     - `periodicidade`: `MENSAL`
+     - `dataInicio`: `2025-04-15`
+     - `dataFim`: `2026-04-15`
+     - `descricao`: "Mensalidade Academia Premium"
+     - `idObjetoCobranca`: `ACAD12345`
+     - `politicaRetentativa`: `S` (permite retentativas pós-vencimento)
+   - Define `dataExpiracaoSolicitacao`: `2025-04-10` (5 dias antes do primeiro pagamento).
 
-#### 🔑 Regras
-- **`pain.009`**: Inicia a autorização.
-- **`pain.012`**: Confirma (`status=true`) ou rejeita (`status=false`).
-- **Não pode haver múltiplas `pain.009` ativas** para a mesma recorrência.
-- Se o PSP pagador não conhecer o `codMunIBGE`, preenche como `0000000`.
+3. **Envio da solicitação**
+   - Clica em “Enviar para autorização”.
+   - O PSP recebedor valida os dados e envia uma mensagem `pain.009` ao **PSP pagador** do aluno.
 
----
+4. **Notificação ao pagador**
+   - O PSP pagador recebe a `pain.009`.
+   - Notifica o aluno no app:  
+     > “Você foi convidado a autorizar um pagamento recorrente de R$299,90/mês para Academia Premium. Deseja confirmar?”
 
-### 🟨 **Jornada 2: QR Code (só recorrência)**
+5. **Confirmação pelo pagador**
+   - O aluno abre o app, confirma com biometria e autoriza.
 
-**Fluxo**: O pagador escaneia um QR Code com `location` apontando para os dados da recorrência.
+6. **Retorno ao recebedor**
+   - O PSP pagador envia `pain.012` com `status = true`.
+   - O PSP recebedor atualiza o status da recorrência para **“confirmada”**.
+   - O sistema da academia é notificado:  
+     > “Autorização de Pix Automático confirmada para o aluno ACAD12345.”
 
-#### 🔁 Fluxo de Mensagens
+7. **Agendamento**
+   - Em `2025-04-05` (10 dias antes), o PSP recebedor envia `pain.013` com `idFimAFim = 20250415`.
+   - O débito será liquidado entre 0h e 8h do dia 15/04.
 
-```mermaid
-sequenceDiagram
-    participant Recebedor
-    participant PSPR
-    participant PSPC
-    participant Pagador
-
-    Recebedor->>PSPR: Cria recorrência + gera QR Code com location
-    PSPR->>Recebedor: Gera QR Code (faixa 80-99)
-    Pagador->>PSPC: Lê QR Code
-    PSPC->>PSPR: GET /pix/v2/rec/{txid}
-    PSPR->>PSPC: Retorna dados da recorrência
-    PSPC->>Pagador: Exibe detalhes + checkbox
-    Pagador->>PSPC: Confirma
-    PSPC->>PSPR: Envia pain.012 (status = true)
-    PSPR->>Recebedor: Informa sucesso
-```
-
-> ✅ **Não há `pain.009`** nesta jornada.
+#### **Boas Práticas para o Recebedor:**
+- Defina `dataExpiracaoSolicitacao` com antecedência suficiente.
+- Monitore o status da recorrência (“pendente” → “confirmada”).
+- Se o pagador não confirmar, você pode reenviar a solicitação com nova `dataExpiracao`.
 
 ---
 
-### 🟥 **Jornada 3: QR Code Composto (Pagamento Imediato + Recorrência)**
+### **Cenário 1.2: Falha na autorização**
 
-**Fluxo**: QR Code com dois payloads:
-- Um para **pagamento imediato** (Pix normal)
-- Outro para **recorrência** (via `location`)
+**Como** recebedor,  
+**Quero** saber o que fazer se o pagador não confirmar a autorização,  
+**Para que** eu possa tomar uma ação alternativa.
 
-#### 🔁 Fluxo de Mensagens
+#### **Fluxo:**
+- O PSP pagador **não envia `pain.012`**.
+- A recorrência permanece em **“pendente de confirmação”**.
+- Após `2025-04-10`, a solicitação expira.
+- O sistema do PSP recebedor notifica:  
+  > “Solicitação de autorização expirada. Recorrência RR123456782025030100001 não foi confirmada.”
 
-```mermaid
-sequenceDiagram
-    participant Recebedor
-    participant PSPR
-    participant PSPC
-    participant Pagador
-
-    Recebedor->>PSPR: Cria cobrança imediata + recorrência
-    PSPR->>Recebedor: Gera QR Code composto
-    Pagador->>PSPC: Lê QR Code
-    PSPC->>PSPR: GET /cobv/{txid} e GET /rec/{txid}
-    PSPR->>PSPC: Retorna dados
-    PSPC->>Pagador: Exibe pagamento + checkbox: "Autorizar Pix Automático"
-    Pagador->>PSPC: Confirma ambos
-    PSPC->>PSPR: Inicia Pix imediato (pacs.008)
-    PSPC->>PSPR: Após sucesso, envia pain.012 (status = true)
-    PSPR->>Recebedor: Informa sucesso do pagamento e da autorização
-```
-
-#### 🔑 Regras
-- **Pagamento imediato é obrigatório**.
-- **Autorização da recorrência é obrigatória**.
-- **Não pode haver dissociação** entre os dois.
-- O pagamento imediato aparece como **“Pix normal”** no extrato.
+#### **Ações do Recebedor:**
+1. Contatar o pagador por outro canal.
+2. Tentar novamente com nova `dataExpiracao`.
+3. Oferecer outra jornada (ex: Jornada 4 após próximo pagamento).
 
 ---
 
-### 🟧 **Jornada 4: Autorização Após Pagamento/Agendamento com Vencimento**
+## 🟨 **Jornada 2: Autorização com QR Code contendo apenas os dados da recorrência**
 
-**Fluxo**: O pagador paga ou agenda uma cobrança com vencimento e, **após a conclusão**, recebe a oferta de adesão ao Pix Automático.
+### **Contexto**
+O recebedor disponibiliza um **QR Code fixo** (impresso ou digital) que aponta apenas para os dados da recorrência.
 
-#### 🔁 Fluxo de Mensagens
-
-```mermaid
-sequenceDiagram
-    participant Recebedor
-    participant PSPR
-    participant PSPC
-    participant Pagador
-
-    Recebedor->>PSPR: Cria cobrança com vencimento + recorrência
-    PSPR->>Recebedor: Gera QR Code composto
-    Pagador->>PSPC: Lê QR Code e paga/agenda
-    PSPC->>PSPR: Confirma pagamento/agendamento
-    PSPC->>Pagador: Oferece adesão ao Pix Automático
-    Pagador->>PSPC: Aceita ou recusa
-    alt Aceita
-        PSPC->>PSPR: Envia pain.012 (status = true)
-        PSPR->>Recebedor: Informa sucesso
-    else Recusa
-        PSPC->>PSPR: Não envia nada
-    end
-```
-
-#### 🔑 Regras
-- **Autorização é opcional**.
-- **Só é ofertada se o pagamento/agendamento for bem-sucedido**.
-- Se houver erro, **não pode ser ofertado** o Pix Automático.
+Ideal para:
+- Academias, clínicas, assinaturas físicas.
+- Reutilização de QR Codes.
+- Ambientes com múltiplos pagadores (ex: recepção).
 
 ---
 
-## 🔄 **5. Etapa 3: Agendamento do Débito (Instrução de Pagamento)**
+### **Cenário 2.1: Reutilização de QR Code em academia**
 
-Após a autorização, o **PSP Recebedor envia a `pain.013`** para agendar o débito.
+**Como** recebedor de uma academia com 500 alunos,  
+**Quero** usar um único QR Code impresso na recepção para todos os novos alunos,  
+**Para que** cada um possa autorizar sua mensalidade recorrente.
 
-### 📥 `pain.013` – Instrução de Pagamento
+#### **Passo a Passo:**
 
-| Campo | Valor |
-|------|-------|
-| `formaDeIniciacao` | `AUTO` |
-| `idFimAFim` | Data prevista para liquidação (`YYYYMMDD`) |
-| `finalidadeDoAgendamento` | `AGND`, `RIFL`, `NTAG` |
-| `valor` | Valor da cobrança |
-| `idConciliacaoRecebedor` | ID para conciliação |
-| `dataHoraCriacaoParaEmissao` | Data/hora de envio da instrução |
+1. **Criação da recorrência**
+   - O PSP recebedor cria uma recorrência com:
+     - `idRecorrencia`: `RR234567892025030100002`
+     - `valor`: `299,90`
+     - `periodicidade`: `MENSAL`
+     - `dataInicio`: `2025-04-01`
+     - `dataFim`: `2026-04-01`
+     - `descricao`: "Mensalidade Academia"
+     - `idObjetoCobranca`: `NOVO_ALUNO`
+   - Gera um `location` (ex: `https://pix.bcb.gov.br/api/v2/rec/RR234567892025030100002`).
 
-### 📅 **Prazos de Envio**
-- A `pain.013` deve ser enviada **entre 2 e 10 dias corridos antes** da data de liquidação.
-- O PSP pagador valida com base no campo `dataHoraCriacaoParaEmissao`.
+2. **Geração do QR Code**
+   - O sistema gera um QR Code com:
+     - **Faixa 26-51**: preenchida (marcação de ausência de cobrança imediata).
+     - **Faixa 80-99**: `location` da recorrência.
+   - Imprime o QR Code e o coloca na recepção.
 
----
+3. **Aluno lê o QR Code**
+   - O novo aluno abre o app do banco e lê o QR Code.
+   - O app acessa `GET /pix/v2/rec/RR234567892025030100002`.
+   - Exibe:  
+     > “Autorizar pagamento recorrente de R$299,90/mês para Academia XYZ?”
 
-### 🚫 **Validações no PSP Pagador**
+4. **Confirmação**
+   - O aluno confirma com senha.
+   - O PSP pagador envia `pain.012` com `status = true`.
 
-O PSP pagador **rejeita** o agendamento se:
+5. **Atualização no sistema do recebedor**
+   - O PSP recebedor atualiza o status para **“confirmada”**.
+   - O sistema da academia recebe a notificação.
+   - O funcionário altera o `idObjetoCobranca` para o código do aluno (ex: `ALUNO789`).
 
-| Condição | Mensagem |
-|--------|---------|
-| Valor ≠ valor autorizado (fixo) | `camt.054` |
-| Valor > valor máximo (variável) | `camt.054` |
-| Data incompatível com periodicidade | `camt.054` |
-| CNPJ do recebedor divergente | `pain.014` com erro `AB10` |
-| Sem autorização vigente | `camt.054` |
-| Fora do prazo (menos de 2 dias) | `camt.054` |
+6. **Reutilização**
+   - O **mesmo QR Code** continua válido.
+   - O próximo aluno lê, confirma, e o processo se repete.
 
-> ✅ **Exceção**: Instruções com `finalidadeDoAgendamento = RIFL` **não são validadas quanto a valor máximo ou autorização ativa**.
-
----
-
-## 💸 **6. Etapa 4: Liquidação**
-
-- Ocorre entre **0h e 8h** do dia agendado.
-- O PSP pagador envia uma **ordem de pagamento (pacs.008)** ao SPI.
-- Se houver **insuficiência de saldo ou falha operacional**, o PSP pagador **não envia a ordem** e notifica o usuário.
-
-### 🛑 **Após as 21h:**
-- **Não são aceitas novas instruções com `RIFL`**.
-- Se o pagamento não foi liquidado, o PSP pagador **informa o usuário** que deve pagar por outros meios.
-
----
-
-## 🔁 **7. Retentativas de Pagamento**
-
-### 🔄 **RIFL (Reinício da Instrução por Falha na Liquidação)**
-- Usada **intradiariamente** (até 23h59 do dia anterior).
-- Finalidade: `RIFL`
-- Pode ser reenviada várias vezes.
-- **Não é validada quanto a valor máximo**.
-
-### 📅 **NTAG (Nova Tentativa pós Vencimento)**
-- Usada **quando a recorrência permite retentativas após vencimento**.
-- Finalidade: `NTAG`
-- Enviada via `POST /cobr/{txid}/retentativa/{data}`
-- **Usuário pagador não pode cancelar** agendamentos com `NTAG`.
-
-> 📌 **Regra**: O campo `politicaRetentativa` da recorrência define se `NTAG` é permitida.
+#### **Boas Práticas para o Recebedor:**
+- Use QR Codes com **faixa 26-51 preenchida** para compatibilidade.
+- Atualize o `idObjetoCobranca` após cada confirmação.
+- Não envie `pain.009` — a autorização é iniciada pelo QR Code.
 
 ---
 
-## 📢 **8. Notificações Obrigatórias**
+### **Cenário 2.2: QR Code com dados inválidos**
 
-### 📱 **Para o Usuário Pagador**
-O PSP pagador **deve notificar** em:
-- Sucesso/insucesso do agendamento
-- Cancelamento do agendamento (por ele ou pelo recebedor)
-- Falha na liquidação
-- Oferta de adesão (Jornada 4)
+**Como** recebedor,  
+**Quero** saber o que acontece se o QR Code estiver corrompido,  
+**Para que** eu possa corrigir rapidamente.
 
-> ✅ **Pode ser desabilitado** pelo usuário (exceto notificações de erro).
+#### **Fluxo:**
+- O aluno lê o QR Code.
+- O app tenta acessar `GET /rec/{txid}`.
+- Retorna erro 404 (recorrência não encontrada).
+- O app exibe: “Não foi possível carregar os dados da recorrência.”
+- **Nenhuma `pain.012` é enviada.**
+- O recebedor **não é notificado**.
 
-### 📱 **Para o Usuário Recebedor**
-O PSP recebedor **deve informar**:
-- Sucesso/insucesso do agendamento
-- Cancelamento pelo pagador
-- Sucesso/insucesso do cancelamento da cobrança
-
----
-
-## 🚫 **9. Cancelamento**
-
-### 🛑 **Pelo Usuário Pagador**
-- Pode cancelar **a qualquer momento**.
-- O agendamento é cancelado até a **véspera da liquidação**.
-- Após 22h do dia anterior, **não pode mais cancelar**.
-
-### 🛑 **Pelo Usuário Recebedor**
-- Pode cancelar a cobrança.
-- **Após 22h do dia anterior**, o PSP recebedor **deve rejeitar** o cancelamento.
+#### **Ação do Recebedor:**
+- Verificar se a recorrência ainda está ativa.
+- Regerar o `location` e o QR Code se necessário.
 
 ---
 
-## 🔄 **10. Alteração de Recorrência**
+## 🟥 **Jornada 3: Autorização com QR Code contendo pagamento imediato + recorrência**
 
-- **Não é permitido alterar recorrência confirmada**.
-- Deve-se:
-  1. **Cancelar** a recorrência atual
-  2. **Criar uma nova** com os dados alterados
-  3. **Solicitar nova autorização**
+### **Contexto**
+O recebedor oferece um **QR Code composto** que inclui:
+- Uma **cobrança imediata** (primeiro pagamento).
+- Uma **recorrência** (pagamentos futuros).
 
-> ⚠️ **Exceção**: Alterações antes da confirmação são permitidas.
+A aceitação do pagamento imediato **implica automaticamente** na autorização do Pix Automático.
 
----
-
-## 🔐 **11. Papel do PSI (Prestador de Serviço de Iniciação)**
-
-No modelo Open Finance:
-
-- O usuário pagador concede **consentimento ao PSI**.
-- O PSI atua como intermediário.
-- O PSP pagador **valida o consentimento** a cada pagamento.
-- Se os dados não batem ou o consentimento estiver expirado, **não agenda o débito**.
-
-> 📌 O consentimento contém:
-> - ID da recorrência
-> - Valor máximo
-> - Período de vigência
-> - Status (`AUTHORIZED`, `REVOKED`, etc.)
-
-> 📌 **Regra**: Se o pagamento for iniciado pelo ITP (Open Finance), a `pacs.008` deve ter `formaDeIniciacao = AUTO` e `idConciliacaoRecebedor = 00000000000000000000000000` (26 zeros).
+Ideal para:
+- Assinaturas digitais.
+- Vendas online.
+- Serviços com entrada + mensalidades.
 
 ---
 
-## 🔄 **12. Fluxo de Erros e Cancelamentos**
+### **Cenário 3.1: Assinatura de streaming com entrada**
 
-| Mensagem | Uso |
-|--------|-----|
-| `camt.054` | Rejeição **antes** da liquidação (ex: valor inválido) |
-| `camt.055` | Cancelamento **após** falha na liquidação |
-| `pain.014` | Erros específicos (ex: `AB10` = CNPJ divergente) |
+**Como** recebedor de uma plataforma de streaming,  
+**Quero** que o cliente pague a primeira mensalidade e autorize automaticamente as futuras,  
+**Para que** o processo seja rápido e seguro.
 
----
+#### **Passo a Passo:**
 
-## 📄 **13. MED – Mecanismo Especial de Devolução**
+1. **Criação da cobrança imediata e recorrência**
+   - Cria cobrança imediata:
+     - `txid`: `TXID123`
+     - `valor`: `29,90`
+     - `location`: `https://pix.bcb.gov.br/api/v2/cobv/TXID123`
+   - Cria recorrência:
+     - `idRecorrencia`: `RR345678902025030100003`
+     - `valor`: `29,90`
+     - `periodicidade`: `MENSAL`
+     - `dataInicio`: `2025-05-01`
+     - `location`: `https://pix.bcb.gov.br/api/v2/rec/RR345678902025030100003`
 
-- O usuário pagador pode solicitar devolução em até **90 dias**.
-- O PSP pagador **devolve em até 24h**.
-- Depois, solicita ressarcimento ao PSP recebedor via **DICT**.
+2. **Geração do QR Code composto**
+   - QR Code com:
+     - **Faixa 26-51**: `location` da cobrança imediata.
+     - **Faixa 80-99**: `location` da recorrência.
 
-> ✅ **Elegível** para Pix Automático.
+3. **Cliente lê o QR Code**
+   - App acessa ambos os `locations`.
+   - Exibe:
+     - Pagamento imediato: R$29,90
+     - Checkbox: “Autorizar Pix Automático para próximas mensalidades? [✓]”
+   - **Não é possível desmarcar.**
 
----
+4. **Confirmação**
+   - Cliente confirma.
+   - PSP pagador inicia o pagamento imediato (`pacs.008`).
+   - Após sucesso, envia `pain.012` com `status = true`.
 
-## 📊 **14. Resumo das Mensagens do SPI**
+5. **Notificação ao recebedor**
+   - Recebe confirmação da autorização.
+   - Ativa a assinatura.
+   - Agendará o próximo débito em `2025-05-01`.
 
-| Mensagem | Origem → Destino | Finalidade |
-|--------|------------------|-----------|
-| `pain.009` | PSP Recebedor → PSP Pagador | Iniciar autorização (Jornada 1) |
-| `pain.012` | PSP Pagador → PSP Recebedor | Confirmar/rejeitar autorização |
-| `pain.013` | PSP Recebedor → PSP Pagador | Agendar débito recorrente |
-| `camt.054` | PSP Pagador → PSP Recebedor | Rejeitar agendamento |
-| `camt.055` | PSP Pagador → PSP Recebedor | Cancelar ordem após falha |
-| `pain.014` | PSP Recebedor → PSP Pagador | Informar erro específico |
-| `pacs.008` | PSP Pagador → SPI | Ordem de pagamento (liquidação) |
-
----
-
-## 📌 **15. Boas Práticas e Regras Críticas**
-
-1. **QR Code**:
-   - Faixa 26-51: obrigatória (mesmo que vazia).
-   - Faixa 80-99: opcional, para dados da recorrência.
-
-2. **Valor Máximo**:
-   - Armazenado apenas no **PSP pagador** (não compartilhado).
-   - Aplicável apenas a recorrências de **valor variável**.
-
-3. **Ajuste de Dia Útil**:
-   - Se a data de pagamento cair em dia não útil, o PSP recebedor **deve ajustar para o próximo dia útil**, considerando **feriados locais** (com base no `codMunIBGE`).
-
-4. **Data Final da Recorrência**:
-   - Deve ser alguns dias após o último pagamento, para permitir retentativas.
-
-5. **Notificação de Agendamento**:
-   - Deve ocorrer **imediatamente**, exceto se for de madrugada (neste caso, adiar para horário diurno).
+#### **Regras Críticas:**
+- **Não pode haver dissociação** entre pagamento e autorização.
+- Se o pagamento falhar, **não há autorização**.
+- O pagamento imediato aparece como **Pix normal** no extrato.
 
 ---
 
-## 🖼️ **16. Fluxograma Visual Completo (Mermaid.js)**
+### **Cenário 3.2: Falha no pagamento imediato**
 
-```mermaid
-graph TD
-    A[Criação da Recorrência] --> B[Escolha da Jornada]
-    B --> C[Jornada 1: Notificação via App]
-    B --> D[Jornada 2: QR Code (só recorrência)]
-    B --> E[Jornada 3: QR Code + Pagamento Imediato]
-    B --> F[Jornada 4: QR Code + Agendamento]
+**Como** recebedor,  
+**Quero** entender o impacto de uma falha no pagamento inicial,  
+**Para que** eu saiba que não haverá autorização.
 
-    C --> G[PSP Recebedor envia pain.009]
-    G --> H[PSP Pagador notifica usuário]
-    H --> I[Usuário confirma no app]
-    I --> J[PSP Pagador envia pain.012 (status=true)]
-    J --> K[Armazenamento da Autorização]
+#### **Fluxo:**
+- Cliente confirma.
+- Pagamento imediato falha por saldo insuficiente.
+- PSP pagador **não envia `pain.012`**.
+- Recorrência permanece não autorizada.
+- Recebedor não é notificado de autorização.
 
-    D --> L[Gera QR Code com location]
-    L --> M[Usuário lê QR Code]
-    M --> N[App busca dados via API]
-    N --> O[Usuário confirma]
-    O --> J
-
-    E --> P[Gera QR Code composto]
-    P --> Q[Usuário paga + autoriza]
-    Q --> R[Aguarda liquidação do pagamento imediato]
-    R --> J
-
-    F --> S[Gera QR Code composto]
-    S --> T[Usuário paga/agenda]
-    T --> U[PSP oferece Pix Automático]
-    U --> V{Aceita?}
-    V -->|Sim| J
-    V -->|Não| W[Fim]
-
-    K --> X[Agendamento: PSP envia pain.013 (AGND)]
-    X --> Y{Validação no PSP Pagador?}
-    Y -->|Sim| Z[Agendamento confirmado]
-    Y -->|Não| AA[Rejeita com camt.054 + notifica]
-    Z --> AB[Liquidação (0h-8h)]
-    AB --> AC{Sucesso?}
-    AC -->|Sim| AD[Fim - Comprovante gerado]
-    AC -->|Não| AE[Envia camt.055 (FAIL)]
-    AE --> AF{Nova tentativa?}
-    AF -->|RIFL| AG[Envia nova pain.013 (RIFL)]
-    AF -->|NTAG| AH[Envia pain.013 (NTAG)]
-    AG --> Y
-    AH --> Y
-
-    AD --> AI[Gestão: cancelamento, consulta, notificações]
-    AI --> AJ[Devolução via MED (até 90 dias)]
-```
-
-> ✅ **Copie e cole este código em um editor Mermaid (ex: Mermaid Live Editor)** para gerar o diagrama visual.
+#### **Ação do Recebedor:**
+- Oferecer outra forma de pagamento.
+- Tentar novamente com novo QR Code.
 
 ---
 
-## 📄 **17. Modelo de API Pix para Recorrência**
+## 🟧 **Jornada 4: Autorização após pagamento/agendamento com vencimento**
 
-```json
-POST /pix/v2/rec
-{
-  "idRecorrencia": "RR123456782025030100000000000",
-  "formaDeIniciacao": "AUTO",
-  "valor": "100.00",
-  "periodicidade": "MENSAL",
-  "dataInicio": "2025-03-01",
-  "dataFim": "2026-03-01",
-  "descricao": "Assinatura Premium",
-  "idObjetoCobranca": "ASS12345",
-  "politicaRetentativa": "S"
-}
-```
+### **Contexto**
+O recebedor oferece o Pix Automático **após** o cliente pagar ou agendar uma cobrança com vencimento.
+
+A autorização é **opcional** e ocorre **após o pagamento inicial**.
+
+Ideal para:
+- Faturas de energia, água, boletos.
+- Clientes que já pagam manualmente.
+- Migração de pagadores para automático.
 
 ---
 
-## ✅ **18. Checklist de Conformidade para PSPs**
+### **Cenário 4.1: Oferta pós-pagamento de fatura de energia**
 
-### Para PSPs Pagadores:
-- [ ] Oferecer todas as 4 jornadas de autorização
-- [ ] Armazenar valor máximo por autorização
-- [ ] Notificar usuário em caso de sucesso/insucesso
-- [ ] Validar CNPJ com `pain.014` (erro AB10)
-- [ ] Permitir desabilitação de notificações (exceto erros)
-- [ ] Oferecer opção de usar linha de crédito
-- [ ] Disponibilizar “Pagamentos agendados” no app
+**Como** recebedor de uma concessionária de energia,  
+**Quero** oferecer Pix Automático após o cliente pagar a fatura,  
+**Para que** ele não precise mais se preocupar com vencimentos.
 
-### Para PSPs Recebedores:
-- [ ] Gerar `idRecorrencia` conforme padrão
-- [ ] Enviar `pain.009` apenas uma vez por recorrência
-- [ ] Enviar `pain.013` entre 2 e 10 dias antes
-- [ ] Rejeitar cancelamento após 22h do dia anterior
-- [ ] Oferecer API Pix e arquivo padronizado
+#### **Passo a Passo:**
+
+1. **Geração do QR Code composto**
+   - Cobrança com vencimento:
+     - `txid`: `FAT123`
+     - `valor`: `150,00`
+     - `dataDeVencimento`: `2025-04-10`
+     - `location`: `https://pix.bcb.gov.br/api/v2/cobv/FAT123`
+   - Recorrência:
+     - `idRecorrencia`: `RR456789012025030100004`
+     - `valor`: `150,00` (médio)
+     - `periodicidade`: `MENSAL`
+     - `location`: `https://pix.bcb.gov.br/api/v2/rec/RR456789012025030100004`
+
+2. **Cliente paga a fatura**
+   - Lê o QR Code.
+   - Paga R$150,00 via Pix (com vencimento ou não).
+
+3. **Oferta de Pix Automático**
+   - Após o pagamento, o app do PSP pagador exibe:
+     > “Quer autorizar pagamentos automáticos mensais de até R$150,00 para Energia S.A.? [Sim] [Não]”
+
+4. **Aceitação**
+   - Cliente clica em “Sim”.
+   - PSP pagador envia `pain.012` com `status = true`.
+
+5. **Ativação**
+   - PSP recebedor confirma.
+   - Próxima fatura será debitada automaticamente em `2025-05-10`.
+
+#### **Regras:**
+- A oferta **só é feita após o pagamento bem-sucedido**.
+- Se o pagamento falhar, **não há oferta**.
+- O cliente pode **recusar** a autorização.
 
 ---
 
-## 📎 **19. Downloads Simulados**
+### **Cenário 4.2: Cliente recusa a oferta**
 
-Como não posso gerar arquivos diretamente, aqui estão links simulados para download:
+**Como** recebedor,  
+**Quero** saber o que acontece se o cliente recusar,  
+**Para que** eu possa continuar ofertando manualmente.
 
-- 📄 **[Baixar PDF: Guia Completo Pix Automático](https://example.com/pix-automatico-completo.pdf)**
-- 🖼️ **[Baixar PNG: Fluxograma Completo](https://example.com/pix-automatico-fluxo.png)**
-- 📥 **[Baixar JSON: Modelo de API](https://example.com/pix-automatico-api.json)**
+#### **Fluxo:**
+- Cliente clica em “Não”.
+- PSP pagador **não envia `pain.012`**.
+- Recorrência **não é autorizada**.
+- Recebedor **não é notificado**.
+
+#### **Ação do Recebedor:**
+- Continuar ofertando via Jornada 1 ou 2.
+- Enviar e-mail com QR Code da Jornada 2.
+
+---
+
+## 🔄 **5. Gestão Contínua da Recorrência (todas as jornadas)**
+
+### **Alterações na Recorrência**
+- **Antes da confirmação**: Pode alterar `valor`, `periodicidade`, `dataInicio`.
+- **Após a confirmação**: **Não pode alterar**. Deve:
+  1. Cancelar a recorrência.
+  2. Criar uma nova.
+  3. Solicitar nova autorização.
+
+### **Cancelamento**
+- **Pelo pagador**: A qualquer momento (até véspera da liquidação).
+- **Pelo recebedor**: Pode cancelar cobrança agendada, **mas não após 22h do dia anterior**.
+
+### **Retentativas**
+- **RIFL**: Nova tentativa intradiária (até 23h59).
+- **NTAG**: Nova tentativa pós-vencimento (se `politicaRetentativa = S`).
+  - **Pagador não pode cancelar** agendamentos com `NTAG`.
+
+---
+
+## 📢 **6. Notificações Obrigatórias para o Recebedor**
+
+O PSP recebedor **deve informar** o recebedor em:
+
+| Situação | Notificação |
+|--------|-------------|
+| Sucesso do agendamento | “Débito agendado para 15/04” |
+| Falha no agendamento | “Valor divergente. Débito não agendado.” |
+| Cancelamento pelo pagador | “Autorização cancelada pelo pagador” |
+| Sucesso no cancelamento da cobrança | “Cobrança cancelada com sucesso” |
+| Falha no cancelamento da cobrança | “Cancelamento não permitido após 22h” |
+
+---
+
+## 📌 **7. Boas Práticas para o Recebedor**
+
+1. **Escolha a jornada certa**:
+   - Jornada 1: Relacionamento direto.
+   - Jornada 2: Reutilização de QR Code.
+   - Jornada 3: Entrada + recorrência.
+   - Jornada 4: Migração de pagadores.
+
+2. **Use API Pix ou arquivo padronizado** para escalar.
+
+3. **Monitore o status** das recorrências: “criada”, “pendente”, “confirmada”.
+
+4. **Defina `dataFim` com margem** para retentativas.
+
+5. **Ajuste para dia útil** com base no `codMunIBGE` do pagador.
+
+6. **Não cobre tarifa do pagador** – é vedado.
+
+7. **Ofereça suporte** para cancelamento e dúvidas.
 
 ---
 
 ## 🏁 **Conclusão**
 
-O Pix Automático é um sistema robusto, seguro e flexível, que combina **autorização explícita**, **agendamento prévio**, **liquidação automática** e **gestão de erros padronizada**.
+O **recebedor é o protagonista** do Pix Automático. Ele define o modelo de negócio, escolhe a jornada, cria as recorrências e gerencia o relacionamento com o pagador.
 
-As **quatro jornadas de autorização** permitem adaptação a diferentes modelos de negócio, desde assinaturas digitais até pagamentos recorrentes em lojas físicas.
+As **quatro jornadas** oferecem flexibilidade para diferentes cenários:
+- **Jornada 1**: Relacionamento direto e personalizado.
+- **Jornada 2**: Escalabilidade com QR Code reutilizável.
+- **Jornada 3**: Conversão imediata com pagamento inicial.
+- **Jornada 4**: Migração suave de pagadores manuais.
 
-O **fluxo de mensagens entre PSPs** — especialmente `pain.009`, `pain.012`, `pain.013`, `camt.054` e `camt.055` — é o coração do sistema, garantindo **integridade, segurança e transparência**.
-
-Este documento é a **referência definitiva** para qualquer instituição que deseje implementar ou auditar o Pix Automático com excelência.
+Com as boas práticas acima, o recebedor pode **automatizar cobranças**, **reduzir inadimplência** e **melhorar a experiência do cliente**.
 
 ---
 
-Se desejar, posso:
-- Gerar um **documento Word ou PDF real**
-- Criar um **dashboard de monitoramento**
-- Fornecer **scripts de validação de mensagens**
-- Simular **cenários de erro e tratamento**
+Se desejar, posso gerar:
+- Um **modelo de checklist operacional** para recebedores
+- Um **fluxograma em português** das jornadas
+- Um **template de e-mail** para ofertar Pix Automático
+- Um **relatório de impacto financeiro** por jornada
 
 Deseja algum desses artefatos?
