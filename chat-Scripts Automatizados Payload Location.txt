@@ -1,0 +1,3480 @@
+### USER
+Analise o documento em anexo, e crie os scripts de testes automatizados do controller Configuração de locations para payloads considerando os cenarios de testes positivos e negativos. user o padrão abaixo:
+
+public class SimulacaoClient {
+    private static final String BASE_URL_PATH_SIMULACOES = "/simulacoes";
+
+    public ValidatableResponse consultaSimulacaoPorCPF(RequestSpecification spec, String cpfValue) {
+        return given().spec(spec)
+                .pathParam("cpf", cpfValue)
+                .when()
+                .get(BASE_URL_PATH_SIMULACOES + "/{cpf}")
+                .then();
+    }
+
+public abstract class BaseTeste {
+    protected BaseTeste() {}
+    protected static RequestSpecification spec;
+    protected static PropertyManager propertyManager = new PropertyManager();
+
+    @BeforeTest(groups = "OL-C3877")
+    public void precondeicao() {
+        spec = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .addFilter(new ResponseLoggingFilter())
+                .addFilter(new RequestLoggingFilter())
+                .build();
+    }
+}
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class SimulacaoDTO {
+    private String nome;
+    private String cpf;
+    private Double valor;
+    private int parcelas;
+    private Boolean seguro;
+}
+
+e nos casos de body use o padrão datafactory com builder.No caso de multiplos queryparams user o queryParams com Map no factory para flexibilizar os cenarios. No contexto validação é importante validar status code, headers, schema e retorno do response body.Considere isolamento das validações genericas em um validator class.Monte com testng e restassured esse codigo e nao economize tokens no retorno.
+
+### ASSISTANT
+Com base na análise do conteúdo do arquivo fornecido (que parece ser um trecho de uma especificação OpenAPI/Swagger relacionado ao **Pix API do BCB**, com foco nos endpoints de **configuração de locations para payloads de recorrências**), abaixo estão os scripts de testes automatizados em **Java**, utilizando:
+
+- **TestNG**
+- **RestAssured**
+- **Lombok**
+- **Builder Pattern com DataFactory**
+- **Padrão Page Object / Controller**
+- **Validações isoladas em uma classe `Validator`**
+- **Map para queryParams dinâmicos**
+
+---
+
+### 📁 Estrutura de Pacotes Sugerida
+```
+src/
+├── test/
+│   ├── java/
+│   │   ├── controller/
+│   │   │   └── PayloadLocationRecControllerTest.java
+│   │   ├── factory/
+│   │   │   └── PayloadLocationRecFactory.java
+│   │   ├── validator/
+│   │   │   └── PayloadLocationRecValidator.java
+│   │   ├── base/
+│   │   │   └── BaseTeste.java
+│   │   └── dto/
+│   │       └── PayloadLocationRecSolicitadaDTO.java
+```
+
+---
+
+## ✅ 1. DTO: `PayloadLocationRecSolicitadaDTO.java`
+
+```java
+package dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.*;
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationRecSolicitadaDTO {
+    private String tipo;
+}
+```
+
+---
+
+## ✅ 2. Factory: `PayloadLocationRecFactory.java`
+
+```java
+package factory;
+
+import dto.PayloadLocationRecSolicitadaDTO;
+import java.util.HashMap;
+import java.util.Map;
+
+public class PayloadLocationRecFactory {
+
+    public static PayloadLocationRecSolicitadaDTO payloadLocationRecSolicitadaValida() {
+        return PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("rec")
+                .build();
+    }
+
+    public static Map<String, Object> queryParamsConsultaValidos() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2023-12-31T23:59:59Z");
+        params.put("paginaAtual", 1);
+        params.put("itensPorPagina", 10);
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsInvalidos() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2024-01-01T00:00:00Z");
+        params.put("fim", "2023-01-01T00:00:00Z"); // fim antes de início
+        return params;
+    }
+}
+```
+
+---
+
+## ✅ 3. Validator: `PayloadLocationRecValidator.java`
+
+```java
+package validator;
+
+import io.restassured.response.ValidatableResponse;
+import org.testng.asserts.SoftAssert;
+
+import static org.hamcrest.Matchers.*;
+
+public class PayloadLocationRecValidator {
+
+    private final SoftAssert softAssert = new SoftAssert();
+
+    public void validaRespostaCriacao(ValidatableResponse response) {
+        response
+                .statusCode(201)
+                .header("Location", notNullValue())
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue())
+                .body("tipo", equalTo("rec"));
+    }
+
+    public void validaRespostaConsulta(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("locations", hasSize(greaterThanOrEqualTo(0)))
+                .body("paginaAtual", notNullValue())
+                .body("itensPorPagina", notNullValue())
+                .body("quantidadeTotal", notNullValue());
+    }
+
+    public void validaErro400(ValidatableResponse response) {
+        response
+                .statusCode(400)
+                .body("type", containsString("SolicRecOperacaoInvalida"))
+                .body("title", equalTo("Operação inválida."))
+                .body("status", equalTo(400))
+                .body("violacoes", hasSize(greaterThan(0)));
+    }
+
+    public void validaErro404(ValidatableResponse response) {
+        response
+                .statusCode(404)
+                .body("type", containsString("PayloadLocationNaoEncontrado"))
+                .body("title", equalTo("Location não encontrada."));
+    }
+
+    public void validaSchema(ValidatableResponse response, String schemaName) {
+        response.body(matchesJsonSchemaInClasspath(schemaName));
+    }
+
+    public void assertAll() {
+        softAssert.assertAll();
+    }
+}
+```
+
+---
+
+## ✅ 4. Controller: `PayloadLocationRecControllerTest.java`
+
+```java
+package controller;
+
+import factory.PayloadLocationRecFactory;
+import io.restassured.http.ContentType;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationRecValidator;
+import base.BaseTeste;
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.*;
+
+public class PayloadLocationRecControllerTest extends BaseTeste {
+
+    private static final String BASE_PATH = "/locrec";
+    private PayloadLocationRecValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        validator = new PayloadLocationRecValidator();
+    }
+
+    // ✅ Cenário Positivo: Criar location para payload de recorrência
+    @Test(description = "CT01 - Deve criar uma location de recorrência com sucesso")
+    public void deveCriarLocationRec() {
+        given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(PayloadLocationRecFactory.payloadLocationRecSolicitadaValida())
+                .when()
+                .post(BASE_PATH)
+                .then()
+                .spec(validator::validaRespostaCriacao);
+    }
+
+    // ✅ Cenário Positivo: Consultar locations com parâmetros válidos
+    @Test(description = "CT02 - Deve consultar locations de recorrência com parâmetros válidos")
+    public void deveConsultarLocationsComParametrosValidos() {
+        given().spec(spec)
+                .queryParams(PayloadLocationRecFactory.queryParamsConsultaValidos())
+                .when()
+                .get(BASE_PATH)
+                .then()
+                .spec(validator::validaRespostaConsulta);
+    }
+
+    // ✅ Cenário Positivo: Recuperar location específica
+    @Test(description = "CT03 - Deve recuperar uma location de recorrência por ID")
+    public void deveRecuperarLocationPorId() {
+        String id = "12069"; // ID válido de exemplo
+
+        given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH + "/{id}")
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(id))
+                .body("location", notNullValue())
+                .body("criacao", notNullValue());
+    }
+
+    // ✅ Cenário Positivo: Recuperar idRec associado à location
+    @Test(description = "CT04 - Deve recuperar o idRec associado à location")
+    public void deveRecuperarIdRecDaLocation() {
+        String id = "12069";
+
+        given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH + "/{id}/idRec")
+                .then()
+                .statusCode(200)
+                .body("idRec", notNullValue());
+    }
+
+    // ❌ Cenário Negativo: Criar location com tipo inválido
+    @Test(description = "CT05 - Não deve criar location com tipo inválido")
+    public void naoDeveCriarLocationComTipoInvalido() {
+        var payload = dto.PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("invalido")
+                .build();
+
+        given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH)
+                .then()
+                .spec(validator::validaErro400);
+    }
+
+    // ❌ Cenário Negativo: Consultar com datas inválidas (fim < início)
+    @Test(description = "CT06 - Não deve consultar com intervalo de datas inválido")
+    public void naoDeveConsultarComDatasInvalidas() {
+        given().spec(spec)
+                .queryParams(PayloadLocationRecFactory.queryParamsInvalidos())
+                .when()
+                .get(BASE_PATH)
+                .then()
+                .spec(validator::validaErro400);
+    }
+
+    // ❌ Cenário Negativo: Buscar location inexistente
+    @Test(description = "CT07 - Deve retornar 404 ao buscar location inexistente")
+    public void deveRetornar404ParaLocationInexistente() {
+        String id = "999999";
+
+        given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH + "/{id}")
+                .then()
+                .spec(validator::validaErro404);
+    }
+
+    // ❌ Cenário Negativo: Acesso negado (sem OAuth2)
+    @Test(description = "CT08 - Deve retornar 403 sem credenciais válidas")
+    public void deveRetornar403SemAutenticacao() {
+        RequestSpecBuilder builder = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .build();
+
+        given().spec(builder)
+                .pathParam("id", "12069")
+                .when()
+                .get(BASE_PATH + "/{id}")
+                .then()
+                .statusCode(403);
+    }
+}
+```
+
+---
+
+## ✅ 5. BaseTest: `BaseTeste.java`
+
+```java
+package base;
+
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.filter.log.RequestLoggingFilter;
+import io.restassured.filter.log.ResponseLoggingFilter;
+import org.testng.annotations.BeforeTest;
+import property.PropertyManager;
+
+import static io.restassured.RestAssured.*;
+
+public abstract class BaseTeste {
+    protected static RequestSpecBuilder specBuilder;
+    protected static PropertyManager propertyManager = new PropertyManager();
+
+    @BeforeTest(groups = "PayloadLocationRec")
+    public void preCondicao() {
+        spec = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .addFilter(new ResponseLoggingFilter())
+                .addFilter(new RequestLoggingFilter())
+                .build();
+
+        // Habilitar logs
+        enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+}
+```
+
+> ⚠️ **Nota**: `PropertyManager` é uma classe auxiliar para carregar propriedades de `application.properties` ou ambiente.
+
+Exemplo de `PropertyManager.java` (simplificado):
+```java
+public class PropertyManager {
+    public String getBaseUri() {
+        return System.getProperty("base.uri", "https://pix.example.com/api");
+    }
+    public String getBasePath() {
+        return "/v2";
+    }
+}
+```
+
+---
+
+## ✅ 6. Schema Validation (Opcional)
+
+Adicione o schema JSON no caminho:
+```
+src/test/resources/schemas/PayloadLocationRecGerada.json
+```
+
+E valide com:
+```java
+.validaSchema(response, "schemas/PayloadLocationRecGerada.json")
+```
+
+---
+
+## ✅ 7. Dependências Maven (trecho)
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.rest-assured</groupId>
+        <artifactId>rest-assured</artifactId>
+        <version>5.4.0</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.testng</groupId>
+        <artifactId>testng</artifactId>
+        <version>7.8.0</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>1.18.30</version>
+        <scope>provided</scope>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.15.2</version>
+    </dependency>
+    <dependency>
+        <groupId>io.rest-assured</groupId>
+        <artifactId>json-schema-validator</artifactId>
+        <version>5.4.0</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## ✅ Resumo dos Cenários Cobertos
+
+| ID | Cenário | Tipo | Validação |
+|----|--------|------|-----------|
+| CT01 | Criar location rec | Positivo | 201, headers, body |
+| CT02 | Consultar com params válidos | Positivo | 200, schema, paginacao |
+| CT03 | Recuperar location por ID | Positivo | 200, campos obrigatórios |
+| CT04 | Recuperar idRec | Positivo | 200, idRec presente |
+| CT05 | Tipo inválido no body | Negativo | 400, violação de schema |
+| CT06 | Datas fim < início | Negativo | 400, violação lógica |
+| CT07 | ID inexistente | Negativo | 404, erro esperado |
+| CT08 | Sem autenticação | Negativo | 403, acesso negado |
+
+---
+
+Se desejar, posso gerar também os arquivos `.feature` para Cucumber ou os schemas JSON de validação com base no conteúdo do OpenAPI.
+
+Deseja que eu gere os schemas ou integre com CI/CD (ex: GitHub Actions)?
+
+### USER
+concentre os metodos de request nesse modelo
+public class SimulacaoClient {
+    private static final String BASE_URL_PATH_SIMULACOES = "/simulacoes";
+
+    public ValidatableResponse consultaSimulacaoPorCPF(RequestSpecification spec, String cpfValue) {
+        return given().spec(spec)
+                .pathParam("cpf", cpfValue)
+                .when()
+                .get(BASE_URL_PATH_SIMULACOES + "/{cpf}")
+                .then();
+    }
+
+### ASSISTANT
+Com base no conteúdo do arquivo fornecido — que descreve endpoints da **Pix API do BCB** relacionados à **configuração de locations para recorrências** — e respeitando o padrão de encapsulamento de requisições conforme o modelo `SimulacaoClient`, abaixo está a classe **`PayloadLocationRecClient`** com todos os métodos de request organizados de forma clara, reutilizável e alinhada às boas práticas de testes automatizados.
+
+---
+
+### ✅ `PayloadLocationRecClient.java`
+
+```java
+public class PayloadLocationRecClient {
+
+    private static final String BASE_PATH_LOCATIONS = "/loc";
+
+    /**
+     * Cria uma nova location para payload de recorrência.
+     *
+     * @param spec Especificação da requisição (com headers, autenticação, etc.)
+     * @param payload Corpo da requisição no formato PayloadLocationRecSolicitadaDTO
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse criaLocationRec(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOCATIONS)
+                .then();
+    }
+
+    /**
+     * Consulta uma lista de locations com base em parâmetros de consulta.
+     *
+     * @param spec Especificação da requisição
+     * @param queryParams Mapa de parâmetros de consulta (inicio, fim, paginaAtual, etc.)
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOCATIONS)
+                .then();
+    }
+
+    /**
+     * Recupera uma location específica pelo ID.
+     *
+     * @param spec Especificação da requisição
+     * @param id Identificador da location (ex: "12069")
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOCATIONS + "/{id}")
+                .then();
+    }
+
+    /**
+     * Atualiza uma location existente (PUT).
+     *
+     * @param spec Especificação da requisição
+     * @param id Identificador da location
+     * @param payload Corpo da requisição com os dados atualizados
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse atualizaLocation(RequestSpecification spec, String id, Object payload) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .put(BASE_PATH_LOCATIONS + "/{id}")
+                .then();
+    }
+
+    /**
+     * Remove uma location específica pelo ID.
+     *
+     * @param spec Especificação da requisição
+     * @param id Identificador da location
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse removeLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOCATIONS + "/{id}")
+                .then();
+    }
+}
+```
+
+---
+
+### 🔧 Uso no Teste (Exemplo)
+
+```java
+@Test(description = "CT01 - Deve criar uma location de recorrência com sucesso")
+public void deveCriarLocationRec() {
+    var payload = PayloadLocationRecFactory.payloadLocationRecSolicitadaValida();
+
+    ValidatableResponse response = new PayloadLocationRecClient()
+            .criaLocationRec(spec, payload);
+
+    validator.validaRespostaCriacao(response);
+}
+```
+
+---
+
+### 🔍 Benefícios do Padrão Adotado
+
+- ✅ **Encapsulamento**: Todos os endpoints estão centralizados em uma única classe cliente.
+- ✅ **Reutilização**: Métodos podem ser usados em múltiplos cenários (positivos e negativos).
+- ✅ **Clareza**: Nomes autoexplicativos e parâmetros bem definidos.
+- ✅ **Flexibilidade**: Uso de `Map<String, Object>` para queryParams e `Object` para body (permite uso de DTOs ou Maps).
+- ✅ **Alinhado ao modelo fornecido**: Segue exatamente o estilo do `SimulacaoClient`.
+
+---
+
+Se desejar, posso gerar também:
+- A classe `PayloadLocationRecValidator` com validações específicas
+- Os testes unitários para essa classe cliente
+- Um wrapper para tratamento de erros e logs
+
+Deseja que eu continue com essas extensões?
+
+### USER
+organize as classes de teste por contexto sendo PostPayloadLocationTest,GetPorPeriodoPayloadLocationTest e etc
+
+### ASSISTANT
+Com base na análise do conteúdo do arquivo fornecido — que descreve a **API Pix do BCB**, especificamente os endpoints relacionados à **configuração de locations para recorrências (PayloadLocationRec)** — e respeitando o padrão de organização por **contexto de teste**, abaixo estão as classes de teste automatizadas, separadas por responsabilidade, usando:
+
+- **TestNG**
+- **RestAssured**
+- **Padrão de Client (como solicitado)**
+- **DTOs com Builder (Lombok)**
+- **DataFactory**
+- **Validações isoladas em `Validator`**
+
+---
+
+## 📁 Estrutura de Pacotes
+
+```
+src/test/java
+├── controller
+│   └── PayloadLocationRecClient.java
+├── dto
+│   ├── PayloadLocationRecSolicitadaDTO.java
+│   └── PayloadLocationRecCompletaDTO.java
+├── factory
+│   └── PayloadLocationRecFactory.java
+├── validator
+│   └── PayloadLocationRecValidator.java
+├── base
+│   └── BaseTeste.java
+└── test
+    ├── PostPayloadLocationRecTest.java
+    ├── GetPorPeriodoPayloadLocationRecTest.java
+    ├── GetPorIdPayloadLocationRecTest.java
+    └── GetIdRecPayloadLocationRecTest.java
+```
+
+---
+
+### ✅ 1. `PayloadLocationRecClient.java`
+
+```java
+public class PayloadLocationRecClient {
+
+    private static final String BASE_PATH = "/locrec";
+
+    public ValidatableResponse criaLocationRec(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH)
+                .then();
+    }
+
+    public ValidatableResponse consultaLocationsPorPeriodo(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH)
+                .then();
+    }
+
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH + "/{id}")
+                .then();
+    }
+
+    public ValidatableResponse consultaIdRecPorLocationId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH + "/{id}/idRec")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ 2. DTOs
+
+#### `PayloadLocationRecSolicitadaDTO.java`
+```java
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationRecSolicitadaDTO {
+    private String tipo; // deve ser "rec"
+}
+```
+
+#### `PayloadLocationRecCompletaDTO.java`
+```java
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationRecCompletaDTO {
+    private String id;
+    private String location;
+    private String criacao;
+    private String idRec;
+}
+```
+
+---
+
+### ✅ 3. `PayloadLocationRecFactory.java`
+
+```java
+public class PayloadLocationRecFactory {
+
+    public static PayloadLocationRecSolicitadaDTO payloadValida() {
+        return PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("rec")
+                .build();
+    }
+
+    public static Map<String, Object> queryParamsValidos() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", 0);
+        params.put("itensPorPagina", 100);
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsDataFimAntesInicio() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2024-01-01T00:00:00Z");
+        params.put("fim", "2023-01-01T00:00:00Z"); // inválido
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsPaginacaoNegativa() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", -1);
+        params.put("itensPorPagina", -10);
+        return params;
+    }
+}
+```
+
+---
+
+### ✅ 4. `PayloadLocationRecValidator.java`
+
+```java
+public class PayloadLocationRecValidator {
+
+    public void validaCriacao201(ValidatableResponse response) {
+        response
+                .statusCode(201)
+                .header("Location", notNullValue())
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue())
+                .body("tipo", equalTo("rec"));
+    }
+
+    public void validaConsulta200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("loc", hasSize(greaterThanOrEqualTo(0)))
+                .body("parametros.inicio", notNullValue())
+                .body("parametros.fim", notNullValue())
+                .body("parametros.paginacao.paginaAtual", notNullValue())
+                .body("parametros.paginacao.itensPorPagina", notNullValue());
+    }
+
+    public void validaPorId200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue());
+    }
+
+    public void validaIdRec200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("idRec", notNullValue());
+    }
+
+    public void valida400(ValidatableResponse response) {
+        response
+                .statusCode(400)
+                .body("status", equalTo(400))
+                .body("title", notNullValue());
+    }
+
+    public void valida403(ValidatableResponse response) {
+        response
+                .statusCode(403)
+                .body("status", equalTo(403));
+    }
+
+    public void valida404(ValidatableResponse response) {
+        response
+                .statusCode(404)
+                .body("status", equalTo(404))
+                .body("title", containsString("não encontrada"));
+    }
+}
+```
+
+---
+
+## ✅ Classes de Teste por Contexto
+
+---
+
+### 🔵 `PostPayloadLocationRecTest.java`
+
+```java
+@Test(groups = "PayloadLocationRec")
+public class PostPayloadLocationRecTest extends BaseTeste {
+
+    private PayloadLocationRecClient client;
+    private PayloadLocationRecValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationRecClient();
+        validator = new PayloadLocationRecValidator();
+    }
+
+    @Test(description = "CT-POST-01: Deve criar uma location de recorrência com sucesso")
+    public void deveCriarLocationRec() {
+        var payload = PayloadLocationRecFactory.payloadValida();
+
+        ValidatableResponse response = client.criaLocationRec(spec, payload);
+
+        validator.validaCriacao201(response);
+    }
+
+    @Test(description = "CT-POST-02: Não deve criar location com tipo inválido")
+    public void naoDeveCriarComTipoInvalido() {
+        var payload = PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("invalido")
+                .build();
+
+        ValidatableResponse response = client.criaLocationRec(spec, payload);
+
+        validator.valida400(response);
+    }
+
+    @Test(description = "CT-POST-03: Não deve criar sem autenticação")
+    public void naoDeveCriarSemAutenticacao() {
+        RequestSpecBuilder builder = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .build();
+
+        var payload = PayloadLocationRecFactory.payloadValida();
+
+        given().spec(builder)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post("/locrec")
+                .then()
+                .statusCode(403);
+    }
+}
+```
+
+---
+
+### 🔵 `GetPorPeriodoPayloadLocationRecTest.java`
+
+```java
+@Test(groups = "PayloadLocationRec")
+public class GetPorPeriodoPayloadLocationRecTest extends BaseTeste {
+
+    private PayloadLocationRecClient client;
+    private PayloadLocationRecValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationRecClient();
+        validator = new PayloadLocationRecValidator();
+    }
+
+    @Test(description = "CT-GET-PERIODO-01: Deve consultar locations por período válido")
+    public void deveConsultarPorPeriodoValido() {
+        Map<String, Object> params = PayloadLocationRecFactory.queryParamsValidos();
+
+        ValidatableResponse response = client.consultaLocationsPorPeriodo(spec, params);
+
+        validator.validaConsulta200(response);
+    }
+
+    @Test(description = "CT-GET-PERIODO-02: Não deve consultar com fim < início")
+    public void naoDeveConsultarComFimAntesInicio() {
+        Map<String, Object> params = PayloadLocationRecFactory.queryParamsDataFimAntesInicio();
+
+        ValidatableResponse response = client.consultaLocationsPorPeriodo(spec, params);
+
+        validator.valida400(response);
+    }
+
+    @Test(description = "CT-GET-PERIODO-03: Não deve consultar com paginação negativa")
+    public void naoDeveConsultarComPaginacaoNegativa() {
+        Map<String, Object> params = PayloadLocationRecFactory.queryParamsPaginacaoNegativa();
+
+        ValidatableResponse response = client.consultaLocationsPorPeriodo(spec, params);
+
+        validator.valida400(response);
+    }
+}
+```
+
+---
+
+### 🔵 `GetPorIdPayloadLocationRecTest.java`
+
+```java
+@Test(groups = "PayloadLocationRec")
+public class GetPorIdPayloadLocationRecTest extends BaseTeste {
+
+    private PayloadLocationRecClient client;
+    private PayloadLocationRecValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationRecClient();
+        validator = new PayloadLocationRecValidator();
+    }
+
+    @Test(description = "CT-GET-ID-01: Deve recuperar location por ID válido")
+    public void deveRecuperarPorIdValido() {
+        String id = "12069";
+
+        ValidatableResponse response = client.consultaLocationPorId(spec, id);
+
+        validator.validaPorId200(response);
+    }
+
+    @Test(description = "CT-GET-ID-02: Deve retornar 404 para ID inexistente")
+    public void deveRetornar404ParaIdInexistente() {
+        String id = "999999";
+
+        ValidatableResponse response = client.consultaLocationPorId(spec, id);
+
+        validator.valida404(response);
+    }
+
+    @Test(description = "CT-GET-ID-03: Deve retornar 403 sem credenciais")
+    public void deveRetornar403SemAutenticacao() {
+        RequestSpecBuilder builder = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .build();
+
+        given().spec(builder)
+                .pathParam("id", "12069")
+                .when()
+                .get("/locrec/{id}")
+                .then()
+                .statusCode(403);
+    }
+}
+```
+
+---
+
+### 🔵 `GetIdRecPayloadLocationRecTest.java`
+
+```java
+@Test(groups = "PayloadLocationRec")
+public class GetIdRecPayloadLocationRecTest extends BaseTeste {
+
+    private PayloadLocationRecClient client;
+    private PayloadLocationRecValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationRecClient();
+        validator = new PayloadLocationRecValidator();
+    }
+
+    @Test(description = "CT-GET-IDREC-01: Deve recuperar idRec associado à location")
+    public void deveRecuperarIdRec() {
+        String id = "12069";
+
+        ValidatableResponse response = client.consultaIdRecPorLocationId(spec, id);
+
+        validator.validaIdRec200(response);
+    }
+
+    @Test(description = "CT-GET-IDREC-02: Deve retornar 404 se location não tiver idRec")
+    public void deveRetornar404SeLocationNaoTiverIdRec() {
+        String id = "12070"; // exemplo sem idRec
+
+        ValidatableResponse response = client.consultaIdRecPorLocationId(spec, id);
+
+        validator.valida404(response);
+    }
+
+    @Test(description = "CT-GET-IDREC-03: Deve retornar 403 sem OAuth")
+    public void deveRetornar403SemAutenticacao() {
+        RequestSpecBuilder builder = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .build();
+
+        given().spec(builder)
+                .pathParam("id", "12069")
+                .when()
+                .get("/locrec/{id}/idRec")
+                .then()
+                .statusCode(403);
+    }
+}
+```
+
+---
+
+## ✅ Resumo dos Contextos
+
+| Classe de Teste | Endpoint | Propósito |
+|------------------|---------|----------|
+| `PostPayloadLocationRecTest` | `POST /locrec` | Criar location de recorrência |
+| `GetPorPeriodoPayloadLocationRecTest` | `GET /locrec` | Consultar locations por período e filtros |
+| `GetPorIdPayloadLocationRecTest` | `GET /locrec/{id}` | Recuperar location específica |
+| `GetIdRecPayloadLocationRecTest` | `GET /locrec/{id}/idRec` | Recuperar `idRec` associado à location |
+
+---
+
+## ✅ Próximos Passos (Opcionais)
+
+Se desejar, posso:
+- Gerar os arquivos de schema JSON para validação com `matchesJsonSchemaInClasspath`
+- Adicionar relatórios (Allure ou ExtentReports)
+- Incluir suporte a OAuth2 dinâmico
+- Integrar com `testng.xml` para execução por grupo
+
+Deseja que eu gere os schemas ou o `testng.xml` de configuração?
+
+### USER
+considere que essas chamadas terão um header padrão que é o x-cert com string de certificado e um Bearer Token
+
+### ASSISTANT
+Com base na análise do conteúdo do arquivo fornecido e na sua solicitação, ajustei toda a estrutura de testes para considerar os **headers obrigatórios** na API Pix do BCB:
+
+- `x-cert`: contendo o certificado digital do participante (em formato string PEM ou base64)
+- `Authorization`: com o valor `Bearer <token>` gerado via OAuth2
+
+Esses headers são **obrigatórios** para todos os endpoints da API Pix, conforme práticas de segurança do BACEN.
+
+Abaixo, apresento as **atualizações necessárias** nas classes principais para garantir que esses headers sejam incluídos de forma **padronizada, segura e reutilizável** em todos os testes.
+
+---
+
+## ✅ 1. Atualização do `BaseTeste.java` (com headers padrão)
+
+```java
+package base;
+
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.filter.log.RequestLoggingFilter;
+import io.restassured.filter.log.ResponseLoggingFilter;
+import org.testng.annotations.BeforeTest;
+import property.PropertyManager;
+
+import static io.restassured.RestAssured.*;
+
+public abstract class BaseTeste {
+    protected static RequestSpecBuilder specBuilder;
+    protected static RequestSpecification spec;
+    protected static PropertyManager propertyManager = new PropertyManager();
+
+    @BeforeTest(groups = "PayloadLocationRec")
+    public void preCondicao() {
+        // Lê os valores das propriedades (ou variáveis de ambiente)
+        String certHeader = propertyManager.getCertHeader();
+        String bearerToken = propertyManager.getBearerToken();
+
+        spec = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .addHeader("x-cert", certHeader)
+                .addHeader("Authorization", "Bearer " + bearerToken)
+                .setContentType("application/json")
+                .addFilter(new RequestLoggingFilter())
+                .addFilter(new ResponseLoggingFilter())
+                .build();
+
+        enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+}
+```
+
+---
+
+## ✅ 2. `PropertyManager.java` (com suporte a headers)
+
+```java
+package property;
+
+public class PropertyManager {
+
+    public String getBaseUri() {
+        return System.getProperty("base.uri", "https://pix.bcb.gov.br/api/v2");
+    }
+
+    public String getBasePath() {
+        return System.getProperty("base.path", "/pix");
+    }
+
+    public String getCertHeader() {
+        // Exemplo: certificado codificado em uma única linha
+        String cert = System.getProperty("x-cert");
+        if (cert == null || cert.isEmpty()) {
+            throw new RuntimeException("Header x-cert não fornecido. Use -Dx-cert='...' ao rodar o teste.");
+        }
+        return cert;
+    }
+
+    public String getBearerToken() {
+        String token = System.getProperty("bearer.token");
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Token OAuth2 não fornecido. Use -Dbearer.token='...' ao rodar o teste.");
+        }
+        return token;
+    }
+}
+```
+
+> 💡 **Como executar com os headers:**
+```bash
+mvn test -Dx-cert="MIIGbTCCBFWgAwIBAgIIK8..." -Dbearer.token="eyJhbGciOiJSUzI1NiIs..."
+```
+
+---
+
+## ✅ 3. Validação nos Testes (Exemplo: `PostPayloadLocationRecTest.java`)
+
+O cliente e os testes **não precisam mudar**, pois o header já está no `spec` global.
+
+```java
+@Test(description = "CT-POST-01: Deve criar uma location de recorrência com sucesso")
+public void deveCriarLocationRec() {
+    var payload = PayloadLocationRecFactory.payloadValida();
+
+    ValidatableResponse response = new PayloadLocationRecClient()
+            .criaLocationRec(spec, payload);
+
+    validator.validaCriacao201(response);
+}
+```
+
+✅ O header `x-cert` e `Authorization` serão automaticamente incluídos.
+
+---
+
+## ✅ 4. (Opcional) Sobrescrever Headers em Casos Específicos
+
+Se precisar testar cenários com header ausente ou inválido, você pode **sobrescrever** o `spec` momentaneamente:
+
+```java
+@Test(description = "CT-POST-04: Deve falhar sem header x-cert")
+public void naoDeveCriarSemXCert() {
+    RequestSpecification specSemCert = new RequestSpecBuilder()
+            .setBaseUri(propertyManager.getBaseUri())
+            .setBasePath(propertyManager.getBasePath())
+            .addHeader("Authorization", "Bearer " + propertyManager.getBearerToken())
+            .build();
+
+    var payload = PayloadLocationRecFactory.payloadValida();
+
+    given().spec(specSemCert)
+            .contentType(ContentType.JSON)
+            .body(payload)
+            .when()
+            .post("/locrec")
+            .then()
+            .statusCode(403); // ou 401, dependendo da política
+}
+```
+
+---
+
+## ✅ 5. Validação no Validator (opcional para headers)
+
+Você pode validar se os headers estão presentes na resposta (ex: segurança):
+
+```java
+public void validaHeadersSeguranca(ValidatableResponse response) {
+    response
+            .header("Server", not(equalTo("nginx"))) // exemplo
+            .header("X-Content-Type-Options", "nosniff")
+            .header("X-Frame-Options", "DENY");
+}
+```
+
+---
+
+## ✅ Resumo das Alterações
+
+| Componente | Alteração |
+|----------|---------|
+| `BaseTeste` | Inclui `x-cert` e `Authorization` no `RequestSpecification` |
+| `PropertyManager` | Gerencia leitura segura dos headers via `-D` ou env |
+| `PayloadLocationRecClient` | **Sem alteração** — reutiliza o `spec` com headers |
+| Testes | Funcionam normalmente — headers aplicados globalmente |
+| Execução | Usa `-Dx-cert="..." -Dbearer.token="..."` |
+
+---
+
+## ✅ Dica: Gerar x-cert em uma linha
+
+Se seu certificado está em formato `.pem`, converta para **uma única linha**:
+
+```bash
+awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' certificado.pem
+```
+
+Ou em terminal Unix:
+```bash
+cat certificado.pem | tr -d '\n' | sed 's/$/\\n/g'
+```
+
+Use a saída como valor do `-Dx-cert`.
+
+---
+
+Se desejar, posso gerar:
+- Um script de autenticação OAuth2 para obter o token automaticamente
+- Um gerador de certificado fake para testes locais
+- Um `testng.xml` com parâmetros para injeção de headers
+
+Deseja que eu prossiga com isso?
+
+### USER
+gere o codigo final dos testes para todos os endpoints
+
+### ASSISTANT
+Com base na análise completa do conteúdo do arquivo fornecido — que descreve a **API Pix do BCB**, com foco nos **endpoints de configuração de locations para recorrências (`/locrec`)** e outros relacionados a **webhooks, cobranças recorrentes, consultas e operações com payloads** — abaixo está a **implementação final completa dos testes automatizados**, organizada por contexto, com:
+
+- Padrão de **Client** (como solicitado)
+- DTOs com **Builder e Lombok**
+- **DataFactory**
+- **Validator** isolado
+- Headers `x-cert` e `Authorization Bearer`
+- TestNG
+- Estrutura por **contexto de teste**
+
+---
+
+## ✅ Estrutura Final dos Testes
+
+### 📁 Pacotes
+
+```
+src/test/java/
+├── base/
+│   └── BaseTeste.java
+├── property/
+│   └── PropertyManager.java
+├── dto/
+│   ├── PayloadLocationRecSolicitadaDTO.java
+│   ├── PayloadLocationRecCompletaDTO.java
+│   └── WebhookRecDTO.java
+├── factory/
+│   └── PayloadLocationRecFactory.java
+├── validator/
+│   └── PayloadLocationRecValidator.java
+├── client/
+│   └── PayloadLocationRecClient.java
+└── test/
+    ├── PostPayloadLocationRecTest.java
+    ├── GetPorPeriodoPayloadLocationRecTest.java
+    ├── GetPorIdPayloadLocationRecTest.java
+    ├── DeletePorIdPayloadLocationRecTest.java
+    ├── PutWebhookRecTest.java
+    ├── GetWebhookRecTest.java
+    └── GetIdRecPayloadLocationRecTest.java
+```
+
+---
+
+### ✅ 1. `BaseTeste.java`
+
+```java
+package base;
+
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.filter.log.RequestLoggingFilter;
+import io.restassured.filter.log.ResponseLoggingFilter;
+import org.testng.annotations.BeforeTest;
+import property.PropertyManager;
+
+import static io.restassured.RestAssured.*;
+
+public abstract class BaseTeste {
+    protected static RequestSpecification spec;
+    protected static PropertyManager propertyManager = new PropertyManager();
+
+    @BeforeTest(groups = {"PayloadLocationRec", "WebhookRec"})
+    public void preCondicao() {
+        String certHeader = propertyManager.getCertHeader();
+        String bearerToken = propertyManager.getBearerToken();
+
+        spec = new RequestSpecBuilder()
+                .setBaseUri(propertyManager.getBaseUri())
+                .setBasePath(propertyManager.getBasePath())
+                .addHeader("x-cert", certHeader)
+                .addHeader("Authorization", "Bearer " + bearerToken)
+                .setContentType("application/json")
+                .addFilter(new RequestLoggingFilter())
+                .addFilter(new ResponseLoggingFilter())
+                .build();
+
+        enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+}
+```
+
+---
+
+### ✅ 2. `PropertyManager.java`
+
+```java
+package property;
+
+public class PropertyManager {
+    public String getBaseUri() {
+        return System.getProperty("base.uri", "https://pix.bcb.gov.br");
+    }
+
+    public String getBasePath() {
+        return System.getProperty("base.path", "/api/v2");
+    }
+
+    public String getCertHeader() {
+        String cert = System.getProperty("x-cert");
+        if (cert == null || cert.isEmpty()) {
+            throw new RuntimeException("Header x-cert não fornecido. Use -Dx-cert='...' ao rodar.");
+        }
+        return cert;
+    }
+
+    public String getBearerToken() {
+        String token = System.getProperty("bearer.token");
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Token OAuth2 não fornecido. Use -Dbearer.token='...'");
+        }
+        return token;
+    }
+}
+```
+
+---
+
+### ✅ 3. DTOs
+
+#### `PayloadLocationRecSolicitadaDTO.java`
+```java
+package dto;
+
+import lombok.*;
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationRecSolicitadaDTO {
+    private String tipo; // "rec"
+}
+```
+
+#### `PayloadLocationRecCompletaDTO.java`
+```java
+package dto;
+
+import lombok.*;
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationRecCompletaDTO {
+    private String id;
+    private String location;
+    private String criacao;
+    private String idRec;
+}
+```
+
+#### `WebhookRecDTO.java`
+```java
+package dto;
+
+import lombok.*;
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class WebhookRecDTO {
+    private String webhookUrl;
+}
+```
+
+---
+
+### ✅ 4. `PayloadLocationRecFactory.java`
+
+```java
+package factory;
+
+import dto.*;
+import java.util.HashMap;
+import java.util.Map;
+
+public class PayloadLocationRecFactory {
+
+    public static PayloadLocationRecSolicitadaDTO payloadValida() {
+        return PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("rec")
+                .build();
+    }
+
+    public static PayloadLocationRecSolicitadaDTO payloadTipoInvalido() {
+        return PayloadLocationRecSolicitadaDTO.builder()
+                .tipo("invalido")
+                .build();
+    }
+
+    public static Map<String, Object> queryParamsValidos() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", 0);
+        params.put("itensPorPagina", 100);
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsFimAntesInicio() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2024-01-01T00:00:00Z");
+        params.put("fim", "2023-01-01T00:00:00Z");
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsPaginacaoNegativa() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", -1);
+        params.put("itensPorPagina", -10);
+        return params;
+    }
+
+    public static WebhookRecDTO webhookValido() {
+        return WebhookRecDTO.builder()
+                .webhookUrl("https://meusite.com/webhook/pix-rec")
+                .build();
+    }
+
+    public static WebhookRecDTO webhookUrlInvalido() {
+        return WebhookRecDTO.builder()
+                .webhookUrl("url-invalida")
+                .build();
+    }
+}
+```
+
+---
+
+### ✅ 5. `PayloadLocationRecValidator.java`
+
+```java
+package validator;
+
+import io.restassured.response.ValidatableResponse;
+import static org.hamcrest.Matchers.*;
+
+public class PayloadLocationRecValidator {
+
+    public void validaCriacao201(ValidatableResponse response) {
+        response
+                .statusCode(201)
+                .header("Location", notNullValue())
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue())
+                .body("tipo", equalTo("rec"));
+    }
+
+    public void validaConsulta200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("loc", hasSize(greaterThanOrEqualTo(0)))
+                .body("parametros.inicio", notNullValue())
+                .body("parametros.fim", notNullValue());
+    }
+
+    public void validaPorId200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("id", notNullValue())
+                .body("location", notNullValue());
+    }
+
+    public void validaIdRec200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("idRec", notNullValue());
+    }
+
+    public void valida400(ValidatableResponse response) {
+        response.statusCode(400);
+    }
+
+    public void valida403(ValidatableResponse response) {
+        response.statusCode(403);
+    }
+
+    public void valida404(ValidatableResponse response) {
+        response.statusCode(404);
+    }
+
+    public void valida200(ValidatableResponse response) {
+        response.statusCode(200);
+    }
+
+    public void valida204(ValidatableResponse response) {
+        response.statusCode(204);
+    }
+}
+```
+
+---
+
+### ✅ 6. `PayloadLocationRecClient.java`
+
+```java
+package client;
+
+import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
+
+import java.util.Map;
+
+import static io.restassured.RestAssured.given;
+
+public class PayloadLocationRecClient {
+
+    private static final String BASE_PATH_LOC = "/locrec";
+    private static final String WEBHOOK_PATH = "/webhookrec";
+
+    public ValidatableResponse criaLocationRec(RequestSpecification spec, Object payload) {
+
+
+### USER
+voce deve gerar somente os scripts do controller Configuração de locations para payloads
+
+### ASSISTANT
+Com base no conteúdo fornecido do arquivo — que descreve a **API Pix do BCB**, especificamente os endpoints relacionados à **Configuração de locations para payloads** (incluindo recorrências) — e respeitando rigorosamente o seu pedido, abaixo estão **somente os scripts do controller (Client)** para os endpoints de **configuração de locations para payloads**, organizados por contexto, conforme o padrão solicitado:
+
+> ✅ **Foco exclusivo**: apenas classes `Client` com métodos que encapsulam as requisições (sem testes, DTOs, validators ou factories).
+
+---
+
+### ✅ 1. `PayloadLocationClient.java`  
+*(Para operações com locations de cobranças imediatas e com vencimento)*
+
+```java
+public class PayloadLocationClient {
+
+    private static final String BASE_PATH_LOC = "/loc";
+
+    /**
+     * Cria uma nova location para cobrança (cob ou cobv).
+     *
+     * @param spec Especificação da requisição (com headers e autenticação)
+     * @param payload Corpo da requisição (tipoCob: "cob" ou "cobv")
+     * @return Resposta validável
+     */
+    public ValidatableResponse criaLocation(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Consulta locations cadastradas por período e filtros.
+     *
+     * @param spec Especificação da requisição
+     * @param queryParams Mapa com: inicio, fim, txIdPresente, tipoCob, paginaAtual, itensPorPagina
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Recupera uma location específica pelo ID.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location (ex: "12345")
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC + "/{id}")
+                .then();
+    }
+
+    /**
+     * Desvincula uma cobrança (txid) de uma location.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location
+     * @return Resposta validável
+     */
+    public ValidatableResponse desvinculaCobrancaDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC + "/{id}/txid")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ 2. `PayloadLocationRecClient.java`  
+*(Para operações com locations de recorrências)*
+
+```java
+public class PayloadLocationRecClient {
+
+    private static final String BASE_PATH_LOC_REC = "/locrec";
+
+    /**
+     * Cria uma nova location para recorrência.
+     *
+     * @param spec Especificação da requisição
+     * @param payload Corpo da requisição (deve conter "tipo": "rec")
+     * @return Resposta validável
+     */
+    public ValidatableResponse criaLocationRec(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC_REC)
+                .then();
+    }
+
+    /**
+     * Consulta locations de recorrência por período e filtros.
+     *
+     * @param spec Especificação da requisição
+     * @param queryParams Mapa com: inicio, fim, idRecPresente, convenio, paginaAtual, itensPorPagina
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaLocationsRec(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC_REC)
+                .then();
+    }
+
+    /**
+     * Recupera uma location de recorrência pelo ID.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaLocationRecPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC_REC + "/{id}")
+                .then();
+    }
+
+    /**
+     * Recupera o idRec associado a uma location de recorrência.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaIdRecDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC_REC + "/{id}/idRec")
+                .then();
+    }
+
+    /**
+     * Desvincula uma recorrência de uma location.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location
+     * @return Resposta validável
+     */
+    public ValidatableResponse desvinculaRecDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC_REC + "/{id}/idRec")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ 3. `WebhookRecClient.java`  
+*(Configuração de webhook para recorrências)*
+
+```java
+public class WebhookRecClient {
+
+    private static final String BASE_PATH_WEBHOOK_REC = "/webhookrec";
+
+    /**
+     * Configura ou atualiza a URL do webhook para recorrências.
+     *
+     * @param spec Especificação da requisição
+     * @param payload Corpo com "webhookUrl"
+     * @return Resposta validável
+     */
+    public ValidatableResponse configuraWebhookRec(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .put(BASE_PATH_WEBHOOK_REC)
+                .then();
+    }
+
+    /**
+     * Consulta a URL do webhook configurada para recorrências.
+     *
+     * @param spec Especificação da requisição
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaWebhookRec(RequestSpecification spec) {
+        return given().spec(spec)
+                .when()
+                .get(BASE_PATH_WEBHOOK_REC)
+                .then();
+    }
+
+    /**
+     * Remove a configuração do webhook para recorrências.
+     *
+     * @param spec Especificação da requisição
+     * @return Resposta validável
+     */
+    public ValidatableResponse removeWebhookRec(RequestSpecification spec) {
+        return given().spec(spec)
+                .when()
+                .delete(BASE_PATH_WEBHOOK_REC)
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ 4. `WebhookClient.java`  
+*(Configuração de webhook para cobranças imediatas/vencimento)*
+
+```java
+public class WebhookClient {
+
+    private static final String BASE_PATH_WEBHOOK = "/webhook";
+
+    /**
+     * Configura ou atualiza a URL do webhook para cobranças.
+     *
+     * @param spec Especificação da requisição
+     * @param payload Corpo com "webhookUrl"
+     * @return Resposta validável
+     */
+    public ValidatableResponse configuraWebhook(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .put(BASE_PATH_WEBHOOK)
+                .then();
+    }
+
+    /**
+     * Consulta a URL do webhook configurada para cobranças.
+     *
+     * @param spec Especificação da requisição
+     * @return Resposta validável
+     */
+    public ValidatableResponse consultaWebhook(RequestSpecification spec) {
+        return given().spec(spec)
+                .when()
+                .get(BASE_PATH_WEBHOOK)
+                .then();
+    }
+
+    /**
+     * Remove a configuração do webhook para cobranças.
+     *
+     * @param spec Especificação da requisição
+     * @return Resposta validável
+     */
+    public ValidatableResponse removeWebhook(RequestSpecification spec) {
+        return given().spec(spec)
+                .when()
+                .delete(BASE_PATH_WEBHOOK)
+                .then();
+    }
+}
+```
+
+---
+
+### 📌 Resumo dos Controllers
+
+| Controller | Endpoints | Finalidade |
+|----------|----------|------------|
+| `PayloadLocationClient` | `POST /loc`, `GET /loc`, `GET /loc/{id}`, `DELETE /loc/{id}/txid` | Locations para cobranças (cob/cobv) |
+| `PayloadLocationRecClient` | `POST /locrec`, `GET /locrec`, `GET /locrec/{id}`, `GET /locrec/{id}/idRec`, `DELETE /locrec/{id}/idRec` | Locations para recorrências |
+| `WebhookRecClient` | `PUT /webhookrec`, `GET /webhookrec`, `DELETE /webhookrec` | Webhook para recorrências |
+| `WebhookClient` | `PUT /webhook`, `GET /webhook`, `DELETE /webhook` | Webhook para cobranças |
+
+---
+
+Estes são **exclusivamente os controllers (clients)** para a **configuração de locations para payloads**, conforme solicitado, alinhados ao padrão `SimulacaoClient` fornecido.
+
+Se desejar, posso fornecer os **DTOs e factories** necessários para uso com esses clients.
+
+### USER
+acho que voce ta se confundindo.o controller é o da Payload location da cobranca e nao da rec
+
+### ASSISTANT
+Você está absolutamente correto, e agradeço pela correção clara e direta.
+
+Com base na análise do conteúdo do arquivo fornecido, o **controller correto** para o qual você solicitou os scripts de testes é o de **`PayloadLocation`** (para cobranças imediatas e com vencimento), **não** o de `PayloadLocationRec` (que é específico para recorrências).
+
+O foco é nos endpoints de **configuração de locations para payloads de cobranças**, conforme descrito na tag:
+
+```json
+{"name": "PayloadLocation", "x-displayName": "Configuração de locations para payloads", "description": "Reúne endpoints destinados a lidar com configuração e remoção de locations para uso dos payloads"}
+```
+
+---
+
+### ✅ Objetivo Alinhado
+
+Vou gerar **apenas os scripts do controller** (no padrão `SimulacaoClient`) para os endpoints de **`PayloadLocation`**, ou seja:
+
+- `POST /loc` → Criar location
+- `GET /loc` → Consultar locations por período
+- `GET /loc/{id}` → Recuperar location por ID
+- `DELETE /loc/{id}/txid` → Desvincular cobrança de uma location
+
+Sem DTOs, sem testes, sem factories. **Apenas o controller (client)**.
+
+---
+
+### ✅ `PayloadLocationClient.java` (Controller Final)
+
+```java
+public class PayloadLocationClient {
+
+    private static final String BASE_PATH_LOC = "/loc";
+
+    /**
+     * Cria uma nova location para uma cobrança (cob ou cobv).
+     *
+     * @param spec Especificação da requisição (com headers, autenticação, etc.)
+     * @param payload Corpo da requisição com o tipo de cobrança (ex: {"tipoCob": "cob"})
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse criaLocation(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Consulta uma lista de locations cadastradas com base em filtros.
+     *
+     * @param spec Especificação da requisição
+     * @param queryParams Mapa com os parâmetros: inicio, fim, txIdPresente, tipoCob, paginaAtual, itensPorPagina
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Recupera uma location específica pelo seu identificador.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location (ex: "7716")
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC + "/{id}")
+                .then();
+    }
+
+    /**
+     * Desvincula uma cobrança (representada por um txid) de uma location.
+     *
+     * @param spec Especificação da requisição
+     * @param id ID da location
+     * @return Resposta validável da API
+     */
+    public ValidatableResponse desvinculaCobrancaDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC + "/{id}/txid")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ Resumo dos Endpoints
+
+| Método | Endpoint | Finalidade | Permissão OAuth2 |
+|-------|---------|-----------|------------------|
+| `POST` | `/loc` | Criar nova location | `payloadlocation.write` |
+| `GET` | `/loc` | Consultar locations por período | `payloadlocation.read` |
+| `GET` | `/loc/{id}` | Recuperar location por ID | `payloadlocation.read` |
+| `DELETE` | `/loc/{id}/txid` | Desvincular cobrança da location | `payloadlocation.write` |
+
+---
+
+Este é o **controller exclusivo e final** para a **configuração de locations para payloads de cobrança**, conforme especificado no documento e alinhado ao seu pedido.
+
+Se desejar, posso agora gerar os **scripts de teste por contexto** (ex: `PostPayloadLocationTest`, `GetPorPeriodoPayloadLocationTest`, etc.) com base neste client. Deseja que eu prossiga?
+
+### USER
+faça o script completo de todos os endpoints dessa controller com base no padrão fornecido
+
+### ASSISTANT
+Com base no conteúdo fornecido do arquivo (especificação da API Pix do BCB) e no padrão solicitado (`SimulacaoClient`), abaixo está o **script completo e final do controller `PayloadLocationClient`**, que encapsula **todos os endpoints da tag `PayloadLocation`** — responsável pela **configuração de locations para payloads de cobranças imediatas e com vencimento**.
+
+O foco é **exclusivamente no controller**, conforme solicitado, com:
+- Padrão alinhado ao exemplo `SimulacaoClient`
+- Uso de `RequestSpecification`
+- Encapsulamento de todos os endpoints `/loc`
+- Suporte a `queryParams` via `Map`
+- Sem testes, DTOs ou validações — apenas o client
+
+---
+
+### ✅ `PayloadLocationClient.java` (Controller Completo)
+
+```java
+public class PayloadLocationClient {
+
+    private static final String BASE_PATH_LOC = "/loc";
+
+    /**
+     * Cria uma nova location para uso em cobranças (cob ou cobv).
+     * <p>
+     * Endpoint: POST /loc
+     *
+     * @param spec     RequestSpecification com headers (x-cert, Authorization, etc.)
+     * @param payload  Corpo da requisição (ex: {"tipoCob": "cob"})
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse criaLocation(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Consulta uma lista de locations cadastradas com base em filtros.
+     * <p>
+     * Endpoint: GET /loc
+     * <p>
+     * Parâmetros suportados:
+     * - inicio (obrigatório)
+     * - fim (obrigatório)
+     * - txIdPresente (opcional)
+     * - tipoCob (opcional: "cob", "cobv")
+     * - paginaAtual (opcional, default: 0)
+     * - itensPorPagina (opcional, default: 100)
+     *
+     * @param spec          RequestSpecification com headers
+     * @param queryParams   Mapa com os parâmetros de consulta
+     * @return              Resposta validável da API
+     */
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Recupera uma location específica pelo seu identificador.
+     * <p>
+     * Endpoint: GET /loc/{id}
+     *
+     * @param spec     RequestSpecification com headers
+     * @param id       ID da location (ex: "7716")
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC + "/{id}")
+                .then();
+    }
+
+    /**
+     * Desvincula uma cobrança (representada por um txid) de uma location.
+     * Após a execução, a location não estará mais vinculada a uma cobrança.
+     * <p>
+     * Endpoint: DELETE /loc/{id}/txid
+     *
+     * @param spec     RequestSpecification com headers
+     * @param id       ID da location
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse desvinculaCobrancaDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC + "/{id}/txid")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ Resumo dos Endpoints Implementados
+
+| Método | Endpoint | Finalidade | Escopo OAuth2 |
+|-------|---------|-----------|----------------|
+| `POST` | `/loc` | Criar nova location para cob/cobv | `payloadlocation.write` |
+| `GET` | `/loc` | Listar locations por período e filtros | `payloadlocation.read` |
+| `GET` | `/loc/{id}` | Recuperar location por ID | `payloadlocation.read` |
+| `DELETE` | `/loc/{id}/txid` | Desvincular cobrança da location | `payloadlocation.write` |
+
+---
+
+### ✅ Como Usar (Exemplo Básico)
+
+```java
+// Dentro de um teste
+PayloadLocationClient client = new PayloadLocationClient();
+
+// 1. Criar location
+var payload = Map.of("tipoCob", "cob");
+ValidatableResponse postResponse = client.criaLocation(spec, payload);
+
+// 2. Consultar por período
+Map<String, Object> params = new HashMap<>();
+params.put("inicio", "2023-01-01T00:00:00Z");
+params.put("fim", "2024-12-31T23:59:59Z");
+params.put("tipoCob", "cob");
+params.put("paginaAtual", 0);
+params.put("itensPorPagina", 100);
+
+ValidatableResponse getResponse = client.consultaLocations(spec, params);
+
+// 3. Recuperar por ID
+ValidatableResponse getByIdResponse = client.consultaLocationPorId(spec, "7716");
+
+// 4. Desvincular cobrança
+ValidatableResponse deleteResponse = client.desvinculaCobrancaDaLocation(spec, "7716");
+```
+
+---
+
+Este é o **controller completo e final** para a **Configuração de locations para payloads**, conforme definido na especificação da API Pix do BCB e alinhado ao padrão fornecido.
+
+Se desejar, posso gerar agora:
+- Os testes por contexto (`PostPayloadLocationTest`, `GetPorPeriodoPayloadLocationTest`, etc.)
+- O DTO `PayloadLocationSolicitadaDTO` com builder
+- A classe `PayloadLocationFactory`
+
+Deseja que eu prossiga com esses artefatos?
+
+### USER
+sim prossiga
+
+### ASSISTANT
+Com base no conteúdo fornecido do arquivo (especificação da API Pix do BCB) e no padrão solicitado, abaixo está o **script completo e final do controller `PayloadLocationClient`**, que encapsula **todos os endpoints da tag `PayloadLocation`** — responsável pela **configuração de locations para payloads de cobranças imediatas e com vencimento**.
+
+Este é o **controller exclusivo e final**, conforme o padrão `SimulacaoClient` fornecido, com foco apenas na camada de requisição (sem testes, DTOs ou validações).
+
+---
+
+### ✅ `PayloadLocationClient.java` (Controller Completo)
+
+```java
+public class PayloadLocationClient {
+
+    private static final String BASE_PATH_LOC = "/loc";
+
+    /**
+     * Cria uma nova location para uso em cobranças (cob ou cobv).
+     * <p>
+     * Endpoint: POST /loc
+     * <p>
+     * Exemplo de payload: {"tipoCob": "cob"} ou {"tipoCob": "cobv"}
+     *
+     * @param spec     RequestSpecification com headers (x-cert, Authorization, etc.)
+     * @param payload  Corpo da requisição (objeto ou Map)
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse criaLocation(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Consulta uma lista de locations cadastradas com base em filtros.
+     * <p>
+     * Endpoint: GET /loc
+     * <p>
+     * Parâmetros suportados:
+     * - inicio (obrigatório)
+     * - fim (obrigatório)
+     * - txIdPresente (opcional, boolean)
+     * - tipoCob (opcional: "cob", "cobv")
+     * - paginaAtual (opcional, default: 0)
+     * - itensPorPagina (opcional, default: 100)
+     *
+     * @param spec           RequestSpecification com headers
+     * @param queryParams    Mapa com os parâmetros de consulta
+     * @return               Resposta validável da API
+     */
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC)
+                .then();
+    }
+
+    /**
+     * Recupera uma location específica pelo seu identificador.
+     * <p>
+     * Endpoint: GET /loc/{id}
+     *
+     * @param spec     RequestSpecification com headers
+     * @param id       ID da location (ex: "7716")
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC + "/{id}")
+                .then();
+    }
+
+    /**
+     * Desvincula uma cobrança (representada por um txid) de uma location.
+     * Após a execução, a location não estará mais vinculada a uma cobrança.
+     * <p>
+     * Endpoint: DELETE /loc/{id}/txid
+     *
+     * @param spec     RequestSpecification com headers
+     * @param id       ID da location
+     * @return         Resposta validável da API
+     */
+    public ValidatableResponse desvinculaCobrancaDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC + "/{id}/txid")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ Resumo dos Endpoints
+
+| Método | Endpoint | Finalidade | Escopo OAuth2 |
+|-------|---------|-----------|----------------|
+| `POST` | `/loc` | Criar nova location para cob/cobv | `payloadlocation.write` |
+| `GET` | `/loc` | Listar locations por período e filtros | `payloadlocation.read` |
+| `GET` | `/loc/{id}` | Recuperar location por ID | `payloadlocation.read` |
+| `DELETE` | `/loc/{id}/txid` | Desvincular cobrança da location | `payloadlocation.write` |
+
+---
+
+Este é o **controller completo e final** para a **Configuração de locations para payloads**, conforme definido na especificação da API Pix do BCB e alinhado ao padrão fornecido.
+
+Se desejar, posso gerar agora:
+- Os testes por contexto (`PostPayloadLocationTest`, `GetPorPeriodoPayloadLocationTest`, etc.)
+- O DTO `PayloadLocationSolicitadaDTO` com builder
+- A classe `PayloadLocationFactory`
+
+Deseja que eu prossiga com esses artefatos?
+
+### USER
+sim
+
+### ASSISTANT
+Com base no conteúdo fornecido do arquivo (especificação da API Pix do BCB, com foco na tag **`PayloadLocation`**) e no padrão solicitado (`SimulacaoClient`), abaixo está a **implementação completa e final dos scripts de testes automatizados para o controller `PayloadLocation`**, organizada por contexto, conforme o seu pedido.
+
+Foram gerados:
+- O **DTO** com `@Builder` e padrão Lombok
+- A **DataFactory** para criar payloads
+- O **Validator** com validações isoladas
+- O **Client** (controller) com os métodos de requisição
+- Os **testes por contexto**, com cenários positivos e negativos
+
+---
+
+### ✅ 1. DTO: `PayloadLocationSolicitadaDTO.java`
+
+```java
+package dto;
+
+import lombok.*;
+
+@Data
+@Builder
+@Jacksonized
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationSolicitadaDTO {
+    private String tipoCob; // "cob" ou "cobv"
+}
+```
+
+---
+
+### ✅ 2. Factory: `PayloadLocationFactory.java`
+
+```java
+package factory;
+
+import dto.PayloadLocationSolicitadaDTO;
+import java.util.HashMap;
+import java.util.Map;
+
+public class PayloadLocationFactory {
+
+    public static PayloadLocationSolicitadaDTO payloadCobImediata() {
+        return PayloadLocationSolicitadaDTO.builder()
+                .tipoCob("cob")
+                .build();
+    }
+
+    public static PayloadLocationSolicitadaDTO payloadCobVencimento() {
+        return PayloadLocationSolicitadaDTO.builder()
+                .tipoCob("cobv")
+                .build();
+    }
+
+    public static PayloadLocationSolicitadaDTO payloadTipoInvalido() {
+        return PayloadLocationSolicitadaDTO.builder()
+                .tipoCob("invalido")
+                .build();
+    }
+
+    public static Map<String, Object> queryParamsConsultaValidos() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", 0);
+        params.put("itensPorPagina", 100);
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsFimAntesInicio() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2024-01-01T00:00:00Z");
+        params.put("fim", "2023-01-01T00:00:00Z");
+        return params;
+    }
+
+    public static Map<String, Object> queryParamsPaginacaoNegativa() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("inicio", "2023-01-01T00:00:00Z");
+        params.put("fim", "2024-12-31T23:59:59Z");
+        params.put("paginaAtual", -1);
+        params.put("itensPorPagina", -10);
+        return params;
+    }
+}
+```
+
+---
+
+### ✅ 3. Validator: `PayloadLocationValidator.java`
+
+```java
+package validator;
+
+import io.restassured.response.ValidatableResponse;
+import static org.hamcrest.Matchers.*;
+
+public class PayloadLocationValidator {
+
+    public void validaCriacao201(ValidatableResponse response) {
+        response
+                .statusCode(201)
+                .header("Location", notNullValue())
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("tipoCob", in("cob", "cobv"));
+    }
+
+    public void validaConsulta200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("loc", hasSize(greaterThanOrEqualTo(0)))
+                .body("parametros.inicio", notNullValue())
+                .body("parametros.fim", notNullValue())
+                .body("parametros.paginacao.paginaAtual", notNullValue())
+                .body("parametros.paginacao.itensPorPagina", notNullValue());
+    }
+
+    public void validaPorId200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue());
+    }
+
+    public void validaDesvinculacao204(ValidatableResponse response) {
+        response.statusCode(204);
+    }
+
+    public void valida400(ValidatableResponse response) {
+        response
+                .statusCode(400)
+                .body("status", equalTo(400));
+    }
+
+    public void valida403(ValidatableResponse response) {
+        response
+                .statusCode(403)
+                .body("status", equalTo(403));
+    }
+
+    public void valida404(ValidatableResponse response) {
+        response
+                .statusCode(404)
+                .body("status", equalTo(404));
+    }
+}
+```
+
+---
+
+### ✅ 4. Client (Controller): `PayloadLocationClient.java`
+
+```java
+package client;
+
+import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
+
+import java.util.Map;
+
+import static io.restassured.RestAssured.given;
+
+public class PayloadLocationClient {
+
+    private static final String BASE_PATH_LOC = "/loc";
+
+    public ValidatableResponse criaLocation(RequestSpecification spec, Object payload) {
+        return given().spec(spec)
+                .contentType(ContentType.JSON)
+                .body(payload)
+                .when()
+                .post(BASE_PATH_LOC)
+                .then();
+    }
+
+    public ValidatableResponse consultaLocations(RequestSpecification spec, Map<String, Object> queryParams) {
+        return given().spec(spec)
+                .queryParams(queryParams)
+                .when()
+                .get(BASE_PATH_LOC)
+                .then();
+    }
+
+    public ValidatableResponse consultaLocationPorId(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .get(BASE_PATH_LOC + "/{id}")
+                .then();
+    }
+
+    public ValidatableResponse desvinculaCobrancaDaLocation(RequestSpecification spec, String id) {
+        return given().spec(spec)
+                .pathParam("id", id)
+                .when()
+                .delete(BASE_PATH_LOC + "/{id}/txid")
+                .then();
+    }
+}
+```
+
+---
+
+### ✅ 5. Testes por Contexto
+
+#### 🔹 `PostPayloadLocationTest.java`
+
+```java
+package test;
+
+import client.PayloadLocationClient;
+import dto.PayloadLocationSolicitadaDTO;
+import factory.PayloadLocationFactory;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationValidator;
+import base.BaseTeste;
+
+import static org.hamcrest.Matchers.notNullValue;
+
+@Test(groups = "PayloadLocation")
+public class PostPayloadLocationTest extends BaseTeste {
+
+    private PayloadLocationClient client;
+    private PayloadLocationValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationClient();
+        validator = new PayloadLocationValidator();
+    }
+
+    @Test(description = "CT-POST-01: Deve criar uma location para cobrança imediata")
+    public void deveCriarLocationParaCob() {
+        PayloadLocationSolicitadaDTO payload = PayloadLocationFactory.payloadCobImediata();
+
+        ValidatableResponse response = client.criaLocation(spec, payload);
+
+        validator.validaCriacao201(response);
+    }
+
+    @Test(description = "CT-POST-02: Deve criar uma location para cobrança com vencimento")
+    public void deveCriarLocationParaCobV() {
+        PayloadLocationSolicitadaDTO payload = PayloadLocationFactory.payloadCobVencimento();
+
+        ValidatableResponse response = client.criaLocation(spec, payload);
+
+        validator.validaCriacao201(response);
+    }
+
+    @Test(description = "CT-POST-03: Não deve criar location com tipoCob inválido")
+    public void naoDeveCriarComTipoInvalido() {
+        PayloadLocationSolicitadaDTO payload = PayloadLocationFactory.payloadTipoInvalido();
+
+        ValidatableResponse response = client.criaLocation(spec, payload);
+
+        validator.valida400(response);
+    }
+}
+```
+
+---
+
+#### 🔹 `GetPorPeriodoPayloadLocationTest.java`
+
+```java
+package test;
+
+import client.PayloadLocationClient;
+import factory.PayloadLocationFactory;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationValidator;
+import base.BaseTeste;
+
+@Test(groups = "PayloadLocation")
+public class GetPorPeriodoPayloadLocationTest extends BaseTeste {
+
+    private PayloadLocationClient client;
+    private PayloadLocationValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationClient();
+        validator = new PayloadLocationValidator();
+    }
+
+    @Test(description = "CT-GET-PERIODO-01: Deve consultar locations com parâmetros válidos")
+    public void deveConsultarComParametrosValidos() {
+        var queryParams = PayloadLocationFactory.queryParamsConsultaValidos();
+
+        ValidatableResponse response = client.consultaLocations(spec, queryParams);
+
+        validator.validaConsulta200(response);
+    }
+
+    @Test(description = "CT-GET-PERIODO-02: Não deve consultar com fim < início")
+    public void naoDeveConsultarComFimAntesInicio() {
+        var queryParams = PayloadLocationFactory.queryParamsFimAntesInicio();
+
+        ValidatableResponse response = client.consultaLocations(spec, queryParams);
+
+        validator.valida400(response);
+    }
+
+    @Test(description = "CT-GET-PERIODO-03: Não deve consultar com paginação negativa")
+    public void naoDeveConsultarComPaginacaoNegativa() {
+        var queryParams = PayloadLocationFactory.queryParamsPaginacaoNegativa();
+
+        ValidatableResponse response = client.consultaLocations(spec, queryParams);
+
+        validator.valida400(response);
+    }
+}
+```
+
+---
+
+#### 🔹 `GetPorIdPayloadLocationTest.java`
+
+```java
+package test;
+
+import client.PayloadLocationClient;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationValidator;
+import base.BaseTeste;
+
+@Test(groups = "PayloadLocation")
+public class GetPorIdPayloadLocationTest extends BaseTeste {
+
+    private PayloadLocationClient client;
+    private PayloadLocationValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationClient();
+        validator = new PayloadLocationValidator();
+    }
+
+    @Test(description = "CT-GET-ID-01: Deve recuperar location por ID válido")
+    public void deveRecuperarPorIdValido() {
+        String id = "7716"; // Exemplo de ID válido
+
+        ValidatableResponse response = client.consultaLocationPorId(spec, id);
+
+        validator.validaPorId200(response);
+    }
+
+    @Test(description = "CT-GET-ID-02: Deve retornar 404 para ID inexistente")
+    public void deveRetornar404ParaIdInexistente() {
+        String id = "999999";
+
+        ValidatableResponse response = client.consultaLocationPorId(spec, id);
+
+        validator.valida404(response);
+    }
+}
+```
+
+---
+
+#### 🔹 `DeletePorIdPayloadLocationTest.java`
+
+```java
+package test;
+
+import client.PayloadLocationClient;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationValidator;
+import base.BaseTeste;
+
+@Test(groups = "PayloadLocation")
+public class DeletePorIdPayloadLocationTest extends BaseTeste {
+
+    private PayloadLocationClient client;
+    private PayloadLocationValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationClient();
+        validator = new PayloadLocationValidator();
+    }
+
+    @Test(description = "CT-DELETE-01: Deve desvincular cobrança de uma location")
+    public void deveDesvincularCobranca() {
+        String id = "7716";
+
+        ValidatableResponse response = client.desvinculaCobrancaDaLocation(spec, id);
+
+        validator.validaDesvinculacao204(response);
+    }
+
+    @Test(description = "CT-DELETE-02: Deve retornar 404 ao desvincular location inexistente")
+    public void deveRetornar404AoDesvincularInexistente() {
+        String id = "999999";
+
+        ValidatableResponse response = client.desvinculaCobrancaDaLocation(spec, id);
+
+        validator.valida404(response);
+    }
+}
+```
+
+---
+
+### ✅ Resumo dos Testes
+
+| Classe de Teste | Endpoint | Cenários |
+|------------------|---------|----------|
+| `PostPayloadLocationTest` | `POST /loc` | Criar com `cob`, `cobv`, falhar com tipo inválido |
+| `GetPorPeriodoPayloadLocationTest` | `GET /loc` | Consultar com filtros válidos, datas inválidas, paginação negativa |
+| `GetPorIdPayloadLocationTest` | `GET /loc/{id}` | Recuperar por ID válido, ID inexistente |
+| `DeletePorIdPayloadLocationTest` | `DELETE /loc/{id}/txid` | Desvincular com sucesso, falhar com ID inexistente |
+
+---
+
+### ✅ Execução
+
+Execute com Maven e injeção de headers:
+
+```bash
+mvn test \
+  -Dbase.uri="https://pix.bcb.gov.br" \
+  -Dbase.path="/api/v2" \
+  -Dx-cert="MIIGbTCCBFWgAwIBAgIIK8..." \
+  -Dbearer.token="eyJhbGciOiJSUzI1NiIs..."
+```
+
+---
+
+Este é o **conjunto completo e final** de testes automatizados para o **controller `PayloadLocation`**, com isolamento de responsabilidades, reutilização, e alinhamento total ao padrão `SimulacaoClient` fornecido.
+
+Se desejar, posso gerar os **schemas JSON** para validação ou um **`testng.xml`** para execução por grupo. Deseja?
+
+### USER
+inclua a validação de schema
+
+### ASSISTANT
+Com base no conteúdo fornecido do arquivo (especificação da API Pix do BCB) e no padrão solicitado, abaixo está a **implementação completa e final dos scripts de testes automatizados para o controller `PayloadLocation`**, agora com a **validação de schema** integrada à classe `PayloadLocationValidator`, conforme o seu pedido.
+
+A validação de schema utiliza o suporte nativo do **RestAssured com JSON Schema**, carregando os arquivos de schema do classpath.
+
+---
+
+### ✅ 1. Estrutura de Pastas para Schemas
+
+Crie os arquivos de schema no caminho:
+```
+src/test/resources/schemas/payloadlocation/
+├── PayloadLocation_Criacao.json
+├── PayloadLocation_Consulta.json
+└── PayloadLocation_PorId.json
+```
+
+---
+
+### ✅ 2. Arquivos de Schema JSON
+
+#### `schemas/payloadlocation/PayloadLocation_Criacao.json`
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["id", "location", "tipoCob", "criacao"],
+  "properties": {
+    "id": { "type": "string" },
+    "location": { "type": "string", "format": "uri" },
+    "tipoCob": { "type": "string", "enum": ["cob", "cobv"] },
+    "criacao": { "type": "string", "format": "date-time" }
+  }
+}
+```
+
+#### `schemas/payloadlocation/PayloadLocation_Consulta.json`
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["loc", "parametros"],
+  "properties": {
+    "loc": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "location", "tipoCob", "criacao"],
+        "properties": {
+          "id": { "type": "string" },
+          "location": { "type": "string", "format": "uri" },
+          "tipoCob": { "type": "string", "enum": ["cob", "cobv"] },
+          "criacao": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "parametros": {
+      "type": "object",
+      "required": ["inicio", "fim"],
+      "properties": {
+        "inicio": { "type": "string", "format": "date-time" },
+        "fim": { "type": "string", "format": "date-time" },
+        "paginacao": {
+          "type": "object",
+          "properties": {
+            "paginaAtual": { "type": "integer" },
+            "itensPorPagina": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### `schemas/payloadlocation/PayloadLocation_PorId.json`
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["id", "location", "tipoCob", "criacao"],
+  "properties": {
+    "id": { "type": "string" },
+    "location": { "type": "string", "format": "uri" },
+    "tipoCob": { "type": "string", "enum": ["cob", "cobv"] },
+    "criacao": { "type": "string", "format": "date-time" }
+  }
+}
+```
+
+---
+
+### ✅ 3. Atualização do `PayloadLocationValidator.java` (com Schema Validation)
+
+```java
+package validator;
+
+import io.restassured.response.ValidatableResponse;
+import static org.hamcrest.Matchers.*;
+
+public class PayloadLocationValidator {
+
+    // Caminhos para os schemas
+    private static final String SCHEMA_CRIACAO = "schemas/payloadlocation/PayloadLocation_Criacao.json";
+    private static final String SCHEMA_CONSULTA = "schemas/payloadlocation/PayloadLocation_Consulta.json";
+    private static final String SCHEMA_POR_ID = "schemas/payloadlocation/PayloadLocation_PorId.json";
+
+    public void validaCriacao201(ValidatableResponse response) {
+        response
+                .statusCode(201)
+                .header("Location", notNullValue())
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("tipoCob", in("cob", "cobv"))
+                .body(matchesJsonSchemaInClasspath(SCHEMA_CRIACAO));
+    }
+
+    public void validaConsulta200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("loc", hasSize(greaterThanOrEqualTo(0)))
+                .body("parametros.inicio", notNullValue())
+                .body("parametros.fim", notNullValue())
+                .body(matchesJsonSchemaInClasspath(SCHEMA_CONSULTA));
+    }
+
+    public void validaPorId200(ValidatableResponse response) {
+        response
+                .statusCode(200)
+                .body("id", notNullValue())
+                .body("location", notNullValue())
+                .body("criacao", notNullValue())
+                .body(matchesJsonSchemaInClasspath(SCHEMA_POR_ID));
+    }
+
+    public void validaDesvinculacao204(ValidatableResponse response) {
+        response.statusCode(204);
+    }
+
+    public void valida400(ValidatableResponse response) {
+        response
+                .statusCode(400)
+                .body("status", equalTo(400))
+                .body("type", containsString("PayloadLocationOperacaoInvalida"));
+    }
+
+    public void valida403(ValidatableResponse response) {
+        response
+                .statusCode(403)
+                .body("status", equalTo(403));
+    }
+
+    public void valida404(ValidatableResponse response) {
+        response
+                .statusCode(404)
+                .body("status", equalTo(404));
+    }
+}
+```
+
+---
+
+### ✅ 4. Exemplo de Teste com Validação de Schema (não precisa alterar)
+
+Os testes permanecem **inalterados**, pois a validação de schema está encapsulada no `validator`.
+
+#### Exemplo em `PostPayloadLocationTest.java`
+
+```java
+@Test(description = "CT-POST-01: Deve criar uma location para cobrança imediata")
+public void deveCriarLocationParaCob() {
+    PayloadLocationSolicitadaDTO payload = PayloadLocationFactory.payloadCobImediata();
+
+    ValidatableResponse response = client.criaLocation(spec, payload);
+
+    validator.validaCriacao201(response); // <-- Schema é validado aqui
+}
+```
+
+---
+
+### ✅ 5. Dependência Maven para JSON Schema (verifique se está presente)
+
+```xml
+<dependency>
+    <groupId>io.rest-assured</groupId>
+    <artifactId>json-schema-validator</artifactId>
+    <version>5.4.0</version>
+    <scope>test</scope>
+</dependency>
+```
+
+---
+
+### ✅ 6. (Opcional) Validação de Erros com Schema
+
+Para erros (400), você pode validar o schema do problema:
+
+#### `schemas/error/Problema.json`
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "title", "status"],
+  "properties": {
+    "type": { "type": "string", "format": "uri" },
+    "title": { "type": "string" },
+    "status": { "type": "integer" },
+    "detail": { "type": "string" },
+    "violacoes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "razao": { "type": "string" },
+          "propriedade": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+```
+
+#### E no validator:
+
+```java
+private static final String SCHEMA_PROBLEMA = "schemas/error/Problema.json";
+
+public void valida400(ValidatableResponse response) {
+    response
+            .statusCode(400)
+            .body("status", equalTo(400))
+            .body(matchesJsonSchemaInClasspath(SCHEMA_PROBLEMA));
+}
+```
+
+---
+
+### ✅ Resumo das Alterações
+
+| Componente | Alteração |
+|----------|---------|
+| `/schemas` | Arquivos JSON Schema adicionados para criação, consulta e erro |
+| `PayloadLocationValidator` | Inclui `matchesJsonSchemaInClasspath()` nos métodos de validação |
+| Testes | **Sem alteração** — validação é transparente |
+| Maven | Confirme a dependência `json-schema-validator` |
+
+---
+
+Esta é a **versão final completa** dos testes para o controller `PayloadLocation`, com **validação de schema** integrada, conforme o padrão da API Pix do BCB e o seu pedido.
+
+Se desejar, posso gerar os **relatórios Allure** ou um **pipeline GitHub Actions** para execução automatizada. Deseja?
+
+### USER
+a estrategia que quero adotar é usar a api client que retorna os dados do get pra validar o conteudo dos responses dos gets. a ideia é : pra buscar uma massa aleatoria eu vou usar o getpor periodo do client que vai retornar exatamente pra pegar uma massa aleatoria nele antes de chamar meu get por id pensando em deixar a busca de massa mais dinamica. e da lista pra valida tbm o retorno da consulta por periodo. Como voce me sugere montar esse script ?
+
+### ASSISTANT
+Perfeito! Sua estratégia é **excelente** e alinha-se com boas práticas de testes automatizados: **reutilizar a própria API para buscar massa de dados dinâmica**, garantindo que os testes sejam **robustos, independentes de dados fixos e sempre válidos**.
+
+Vamos montar esse script com base no **controller `PayloadLocationClient`**, conforme o padrão fornecido, e aplicar a lógica:
+
+---
+
+### ✅ Objetivo da Estratégia
+
+1. Usar `GET /loc` (consulta por período) para buscar **uma lista de locations ativas**
+2. Selecionar **aleatoriamente um `id` válido** dessa lista
+3. Usar esse `id` para chamar `GET /loc/{id}` e validar o retorno
+4. Validar que o item retornado por `GET /loc/{id}` está **consistente com a lista de `GET /loc`**
+
+---
+
+### ✅ Estrutura do Script
+
+Vamos criar uma classe `GetPorIdPayloadLocationTest` que:
+- Usa o `PayloadLocationClient` para fazer as requisições
+- Extrai um `id` aleatório da resposta de `consultaLocations`
+- Valida que o `GET /loc/{id}` retorna dados consistentes com a lista
+
+---
+
+### ✅ 1. DTO de Resposta da Lista: `PayloadLocationConsultadasDTO.java`
+
+```java
+package dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class PayloadLocationConsultadasDTO {
+    private List<PayloadLocationItemDTO> loc;
+    private Parametros parametros;
+}
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+class PayloadLocationItemDTO {
+    private String id;
+    private String location;
+    private String tipoCob;
+    private String criacao;
+}
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+class Parametros {
+    private String inicio;
+    private String fim;
+    private Paginacao paginacao;
+}
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+class Paginacao {
+    private Integer paginaAtual;
+    private Integer itensPorPagina;
+}
+```
+
+---
+
+### ✅ 2. Atualização do `PayloadLocationClient` (para retornar Response)
+
+Precisamos de um método que retorne a **resposta bruta** para extrair dados. Vamos adicionar um overload:
+
+```java
+// Em PayloadLocationClient.java
+
+/**
+ * Consulta locations e retorna a resposta bruta para extração de dados.
+ */
+public Response consultaLocationsResponse(RequestSpecification spec, Map<String, Object> queryParams) {
+    return given().spec(spec)
+            .queryParams(queryParams)
+            .when()
+            .get(BASE_PATH_LOC);
+}
+```
+
+> ✅ Importe: `import io.restassured.response.Response;`
+
+---
+
+### ✅ 3. Teste: `GetPorIdPayloadLocationTest.java` (com estratégia dinâmica)
+
+```java
+package test;
+
+import client.PayloadLocationClient;
+import dto.PayloadLocationConsultadasDTO;
+import dto.PayloadLocationItemDTO;
+import factory.PayloadLocationFactory;
+import io.restassured.response.Response;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+import validator.PayloadLocationValidator;
+import base.BaseTeste;
+
+import java.util.List;
+import java.util.Random;
+
+import static org.testng.Assert.*;
+
+@Test(groups = "PayloadLocation")
+public class GetPorIdPayloadLocationTest extends BaseTeste {
+
+    private PayloadLocationClient client;
+    private PayloadLocationValidator validator;
+
+    @BeforeClass
+    public void setup() {
+        client = new PayloadLocationClient();
+        validator = new PayloadLocationValidator();
+    }
+
+    @Test(description = "CT-GET-ID-01: Deve recuperar location por ID obtido dinamicamente da lista")
+    public void deveRecuperarLocationPorIdDinamico() {
+        // Passo 1: Consultar lista de locations
+        Map<String, Object> queryParams = PayloadLocationFactory.queryParamsConsultaValidos();
+        Response listaResponse = client.consultaLocationsResponse(spec, queryParams);
+
+        // Valida status e extrai dados
+        listaResponse.then().statusCode(200);
+        PayloadLocationConsultadasDTO lista = listaResponse.as(PayloadLocationConsultadasDTO.class);
+
+        // Valida que há pelo menos uma location
+        assertNotNull(lista.getLoc(), "Lista de locations é nula");
+        assertTrue(lista.getLoc().size() > 0, "Nenhuma location encontrada para teste");
+
+        // Passo 2: Selecionar um ID aleatório
+        List<PayloadLocationItemDTO> locations = lista.getLoc();
+        PayloadLocationItemDTO itemAleatorio = locations.get(new Random().nextInt(locations.size()));
+        String idSelecionado = itemAleatorio.getId();
+
+        System.out.println("ID selecionado aleatoriamente: " + idSelecionado);
+
+        // Passo 3: Chamar GET /loc/{id}
+        ValidatableResponse getByIdResponse = client.consultaLocationPorId(spec, idSelecionado);
+
+        // Validações
+        validator.validaPorId200(getByIdResponse);
+
+        // Extração do item retornado
+        Response individualResponse = client.consultaLocationsResponse(spec, Map.of("txid", "")) // dummy
+                .then().spec(getByIdResponse.extract().spec()).extract().response();
+        PayloadLocationItemDTO locationIndividual = individualResponse.as(PayloadLocationItemDTO.class);
+
+        // Passo 4: Validar consistência entre lista e detalhe
+        assertEquals(locationIndividual.getId(), itemAleatorio.getId(), "ID deve ser igual");
+        assertEquals(locationIndividual.getLocation(), itemAleatorio.getLocation(), "Location deve ser igual");
+        assertEquals(locationIndividual.getTipoCob(), itemAleatorio.getTipoCob(), "tipoCob deve ser igual");
+        assertTrue(
+                locationIndividual.getCriacao().startsWith(itemAleatorio.getCriacao().substring(0, 10)),
+                "Data de criação deve ser compatível"
+        );
+    }
+
+    @Test(description = "CT-GET-ID-02: Deve validar schema e integridade da consulta por período")
+    public void deveValidarIntegridadeDaConsultaPorPeriodo() {
+        Map<String, Object> queryParams = PayloadLocationFactory.queryParamsConsultaValidos();
+        Response response = client.consultaLocationsResponse(spec, queryParams);
+
+        // Valida status e schema
+        response.then().statusCode(200);
+        response.then().body(matchesJsonSchemaInClasspath("schemas/payloadlocation/PayloadLocation_Consulta.json"));
+
+        // Extrai e valida conteúdo
+        PayloadLocationConsultadasDTO lista = response.as(PayloadLocationConsultadasDTO.class);
+        assertNotNull(lista.getLoc(), "Campo 'loc' não deve ser nulo");
+        assertNotNull(lista.getParametros(), "Campo 'parametros' não deve ser nulo");
+        assertNotNull(lista.getParametros().getInicio(), "Parâmetro 'inicio' deve estar presente");
+        assertNotNull(lista.getParametros().getFim(), "Parâmetro 'fim' deve estar presente");
+
+        // Valida que todos os itens têm campos obrigatórios
+        for (PayloadLocationItemDTO item : lista.getLoc()) {
+            assertNotNull(item.getId(), "ID não pode ser nulo na lista");
+            assertNotNull(item.getLocation(), "Location não pode ser nula");
+            assertTrue(item.getTipoCob().equals("cob") || item.getTipoCob().equals("cobv"),
+                    "tipoCob deve ser 'cob' ou 'cobv'");
+        }
+    }
+}
+```
+
+---
+
+### ✅ 4. Melhorias no `PayloadLocationValidator` (opcional)
+
+Adicione um método para validar apenas o schema:
+
+```java
+public void validaSchemaConsulta(ValidatableResponse response) {
+    response.body(matchesJsonSchemaInClasspath("schemas/payloadlocation/PayloadLocation_Consulta.json"));
+}
+```
+
+E use no teste:
+```java
+validator.validaSchemaConsulta(listaResponse.then());
+```
+
+---
+
+### ✅ 5. Dica: Filtro por Status (opcional)
+
+Se quiser garantir que só pega locations **ativas**, filtre por `txIdPresente=true`:
+
+```java
+params.put("txIdPresente", true);
+```
+
+Isso garante que a location está vinculada a uma cobrança ativa.
+
+---
+
+### ✅ Resumo da Estratégia
+
+| Passo | Ação |
+|------|------|
+| 1 | `GET /loc` com período válido → retorna lista de locations |
+| 2 | Extrai `id` aleatório de um item da lista |
+| 3 | `GET /loc/{id}` com o ID selecionado |
+| 4 | Valida: status, schema, e **consistência de dados** entre lista e detalhe |
+
+---
+
+### ✅ Benefícios
+
+- ✅ Elimina dependência de IDs fixos
+- ✅ Teste sempre com dados reais e válidos
+- ✅ Valida integridade da API (lista ↔ detalhe)
+- ✅ Mais robusto para CI/CD e ambientes dinâmicos
+
+---
+
+Se quiser, posso gerar uma **utilidade genérica** (`DataPickerUtils.java`) para extrair aleatoriamente itens de qualquer lista retornada pela API, reutilizável em outros testes.
+
+Deseja que eu prossiga com isso?
+
+### USER
+vou usar sem essa sua sugestao sua
+
+### ASSISTANT
+Entendido! Se no futuro precisar de apoio, estou à disposição. Boa sorte com a sua estratégia de testes! 🚀
+
+### USER
+quero que voce escreva os casos de teste no padrão no nome abaixo:
+
+[api-pix] Metodo  + path api + resultado esperado que é o nome do metodo de teste.
+Ex: [api-pix] POST /loc - deveCriarLocationParaCob
+
+Alem dessa informação o caso de teste deve ter objetivo e pre condicao
+
+pra que eu possa cadastra no zephyr scale
+
+### ASSISTANT
+Com base na análise do conteúdo fornecido (especificação da API Pix do BCB, com foco no **controller de configuração de locations para payloads**) e no padrão solicitado, abaixo estão os **casos de teste** formatados para cadastro no **Zephyr Scale**, com:
+
+- **Nome do teste** no padrão: `[api-pix] Método /path - resultadoEsperado`
+- **Objetivo**
+- **Pré-condição**
+
+Esses casos cobrem os endpoints do controller `PayloadLocation` (`/loc`), conforme a tag `PayloadLocation` descrita no arquivo.
+
+---
+
+### ✅ Casos de Teste: Controller `PayloadLocation`
+
+---
+
+#### 1. `[api-pix] POST /loc - deveCriarLocationParaCob`
+
+- **Objetivo**:  
+  Validar que é possível criar uma location para uma cobrança imediata (cob) com sucesso, retornando status 201, headers e corpo com os dados da location gerada.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT.
+
+---
+
+#### 2. `[api-pix] POST /loc - deveCriarLocationParaCobV`
+
+- **Objetivo**:  
+  Validar que é possível criar uma location para uma cobrança com vencimento (cobv) com sucesso, retornando status 201 e os dados da location no corpo da resposta.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT.
+
+---
+
+#### 3. `[api-pix] POST /loc - naoDeveCriarLocationComTipoCobInvalido`
+
+- **Objetivo**:  
+  Validar que a API rejeita a criação de uma location quando o campo `tipoCob` possui um valor inválido (ex: "invalido"), retornando status 400 e erro `PayloadLocationOperacaoInvalida`.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`.
+
+---
+
+#### 4. `[api-pix] POST /loc - naoDeveCriarLocationSemTipoCob`
+
+- **Objetivo**:  
+  Validar que a API rejeita a criação de uma location quando o campo `tipoCob` está ausente no payload, retornando status 400 e erro de violação de schema.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`.
+
+---
+
+#### 5. `[api-pix] GET /loc - deveConsultarLocationsComPeriodoValido`
+
+- **Objetivo**:  
+  Validar que é possível consultar uma lista de locations cadastradas em um intervalo de tempo válido, retornando status 200 e uma lista paginada de locations.
+
+- **Pré-condição**:  
+  Existem locations cadastradas no período informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 6. `[api-pix] GET /loc - naoDeveConsultarComFimAntesDoInicio`
+
+- **Objetivo**:  
+  Validar que a API rejeita a consulta quando o parâmetro `fim` é anterior ao `inicio`, retornando status 400 e erro `PayloadLocationConsultaInvalida`.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 7. `[api-pix] GET /loc - naoDeveConsultarComPaginacaoNegativa`
+
+- **Objetivo**:  
+  Validar que a API rejeita a consulta quando `paginaAtual` ou `itensPorPagina` são negativos, retornando status 400 e erro de validação.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 8. `[api-pix] GET /loc - naoDeveConsultarComParametrosInvalidos`
+
+- **Objetivo**:  
+  Validar que a API rejeita a consulta com parâmetros fora do formato esperado (ex: data inválida), retornando status 400.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 9. `[api-pix] GET /loc/{id} - deveRecuperarLocationPorIdExistente`
+
+- **Objetivo**:  
+  Validar que é possível recuperar uma location específica por seu ID, retornando status 200 e os dados completos da location.
+
+- **Pré-condição**:  
+  Existe uma location cadastrada com o ID informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 10. `[api-pix] GET /loc/{id} - naoDeveRecuperarLocationPorIdInexistente`
+
+- **Objetivo**:  
+  Validar que a API retorna 404 quando o ID da location não existe, com erro `PayloadLocationNaoEncontrado`.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 11. `[api-pix] GET /loc/{id} - naoDeveRecuperarLocationComIdInvalido`
+
+- **Objetivo**:  
+  Validar que a API rejeita a consulta com um ID mal formatado (ex: caracteres especiais), retornando status 400.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`.
+
+---
+
+#### 12. `[api-pix] DELETE /loc/{id}/txid - deveDesvincularCobrancaDaLocation`
+
+- **Objetivo**:  
+  Validar que é possível desvincular uma cobrança (txid) de uma location, retornando status 204 (No Content).
+
+- **Pré-condição**:  
+  A location existe e está vinculada a uma cobrança. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`.
+
+---
+
+#### 13. `[api-pix] DELETE /loc/{id}/txid - naoDeveDesvincularComIdInexistente`
+
+- **Objetivo**:  
+  Validar que a API retorna 404 ao tentar desvincular uma cobrança de uma location inexistente.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`.
+
+---
+
+#### 14. `[api-pix] DELETE /loc/{id}/txid - naoDeveDesvincularComIdInvalido`
+
+- **Objetivo**:  
+  Validar que a API rejeita a desvinculação com um ID mal formatado, retornando status 400.
+
+- **Pré-condição**:  
+  O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`.
+
+---
+
+#### 15. `[api-pix] POST /loc - naoDeveCriarLocationSemAutenticacao`
+
+- **Objetivo**:  
+  Validar que a API rejeita a criação de uma location sem o header `Authorization`, retornando status 403 (`AcessoNegado`).
+
+- **Pré-condição**:  
+  Nenhuma (teste de segurança). A requisição é feita sem token OAuth2.
+
+---
+
+#### 16. `[api-pix] GET /loc - naoDeveConsultarSemAutenticacao`
+
+- **Objetivo**:  
+  Validar que a API rejeita a consulta de locations sem o header `Authorization`, retornando status 403.
+
+- **Pré-condição**:  
+  Nenhuma (teste de segurança). A requisição é feita sem token OAuth2.
+
+---
+
+### ✅ Próximos Passos
+
+Você pode copiar esses casos diretamente para o **Zephyr Scale** no formato:
+
+| Test Case Name | Objective | Precondition |
+|----------------|-----------|-------------|
+| `[api-pix] POST /loc - deveCriarLocationParaCob` | Validar que é possível criar... | O usuário possui credenciais... |
+
+Se desejar, posso gerar um **CSV** ou **JSON** para importação em massa no Zephyr Scale.
+
+Deseja que eu gere o arquivo de importação?
+
+### USER
+antes de gerar o csv ajuste nos nomes pra que antes do /loc tenha /api/v1
+
+### ASSISTANT
+Perfeito! Com base no conteúdo do arquivo fornecido e na sua solicitação, ajustei todos os **nomes dos casos de teste** para incluir o prefixo `/api/v1` antes do `/loc`, alinhando-se à estrutura completa do endpoint conforme esperado em ambientes reais (ex: `https://pix.example.com/api/v1/loc`).
+
+Abaixo estão os **casos de teste atualizados** no padrão solicitado para cadastro no **Zephyr Scale**, com:
+
+- **Nome do teste**: `[api-pix] Método /api/v1/path - resultadoEsperado`
+- **Objetivo**
+- **Pré-condição**
+
+---
+
+### ✅ Casos de Teste: Controller `PayloadLocation` (com `/api/v1`)
+
+| Test Case Name | Objective | Precondition |
+|----------------|---------|-------------|
+| `[api-pix] POST /api/v1/loc - deveCriarLocationParaCob` | Validar que é possível criar uma location para uma cobrança imediata (cob) com sucesso, retornando status 201, headers e corpo com os dados da location gerada. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT. |
+| `[api-pix] POST /api/v1/loc - deveCriarLocationParaCobV` | Validar que é possível criar uma location para uma cobrança com vencimento (cobv) com sucesso, retornando status 201 e os dados da location no corpo da resposta. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT. |
+| `[api-pix] POST /api/v1/loc - naoDeveCriarLocationComTipoCobInvalido` | Validar que a API rejeita a criação de uma location quando o campo `tipoCob` possui um valor inválido (ex: "invalido"), retornando status 400 e erro `PayloadLocationOperacaoInvalida`. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`. |
+| `[api-pix] POST /api/v1/loc - naoDeveCriarLocationSemTipoCob` | Validar que a API rejeita a criação de uma location quando o campo `tipoCob` está ausente no payload, retornando status 400 e erro de violação de schema. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`. |
+| `[api-pix] GET /api/v1/loc - deveConsultarLocationsComPeriodoValido` | Validar que é possível consultar uma lista de locations cadastradas em um intervalo de tempo válido, retornando status 200 e uma lista paginada de locations. | Existem locations cadastradas no período informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc - naoDeveConsultarComFimAntesDoInicio` | Validar que a API rejeita a consulta quando o parâmetro `fim` é anterior ao `inicio`, retornando status 400 e erro `PayloadLocationConsultaInvalida`. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc - naoDeveConsultarComPaginacaoNegativa` | Validar que a API rejeita a consulta quando `paginaAtual` ou `itensPorPagina` são negativos, retornando status 400 e erro de validação. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc - naoDeveConsultarComParametrosInvalidos` | Validar que a API rejeita a consulta com parâmetros fora do formato esperado (ex: data inválida), retornando status 400. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc/{id} - deveRecuperarLocationPorIdExistente` | Validar que é possível recuperar uma location específica por seu ID, retornando status 200 e os dados completos da location. | Existe uma location cadastrada com o ID informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc/{id} - naoDeveRecuperarLocationPorIdInexistente` | Validar que a API retorna 404 quando o ID da location não existe, com erro `PayloadLocationNaoEncontrado`. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] GET /api/v1/loc/{id} - naoDeveRecuperarLocationComIdInvalido` | Validar que a API rejeita a consulta com um ID mal formatado (ex: caracteres especiais), retornando status 400. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`. |
+| `[api-pix] DELETE /api/v1/loc/{id}/txid - deveDesvincularCobrancaDaLocation` | Validar que é possível desvincular uma cobrança (txid) de uma location, retornando status 204 (No Content). | A location existe e está vinculada a uma cobrança. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`. |
+| `[api-pix] DELETE /api/v1/loc/{id}/txid - naoDeveDesvincularComIdInexistente` | Validar que a API retorna 404 ao tentar desvincular uma cobrança de uma location inexistente. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`. |
+| `[api-pix] DELETE /api/v1/loc/{id}/txid - naoDeveDesvincularComIdInvalido` | Validar que a API rejeita a desvinculação com um ID mal formatado, retornando status 400. | O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`. |
+| `[api-pix] POST /api/v1/loc - naoDeveCriarLocationSemAutenticacao` | Validar que a API rejeita a criação de uma location sem o header `Authorization`, retornando status 403 (`AcessoNegado`). | Nenhuma (teste de segurança). A requisição é feita sem token OAuth2. |
+| `[api-pix] GET /api/v1/loc - naoDeveConsultarSemAutenticacao` | Validar que a API rejeita a consulta de locations sem o header `Authorization`, retornando status 403. | Nenhuma (teste de segurança). A requisição é feita sem token OAuth2. |
+
+---
+
+### ✅ Próximo Passo: CSV para Importação no Zephyr Scale
+
+Agora vou gerar o arquivo **CSV** com esses dados para você importar diretamente no Zephyr Scale (via Jira).
+
+Segue o conteúdo do CSV:
+
+```csv
+"Test Case Name","Objective","Precondition"
+"[api-pix] POST /api/v1/loc - deveCriarLocationParaCob","Validar que é possível criar uma location para uma cobrança imediata (cob) com sucesso, retornando status 201, headers e corpo com os dados da location gerada.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT."
+"[api-pix] POST /api/v1/loc - deveCriarLocationParaCobV","Validar que é possível criar uma location para uma cobrança com vencimento (cobv) com sucesso, retornando status 201 e os dados da location no corpo da resposta.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write` e um certificado digital (x-cert) registrado no DICT."
+"[api-pix] POST /api/v1/loc - naoDeveCriarLocationComTipoCobInvalido","Validar que a API rejeita a criação de uma location quando o campo `tipoCob` possui um valor inválido (ex: ""invalido""), retornando status 400 e erro `PayloadLocationOperacaoInvalida`.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`."
+"[api-pix] POST /api/v1/loc - naoDeveCriarLocationSemTipoCob","Validar que a API rejeita a criação de uma location quando o campo `tipoCob` está ausente no payload, retornando status 400 e erro de violação de schema.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`."
+"[api-pix] GET /api/v1/loc - deveConsultarLocationsComPeriodoValido","Validar que é possível consultar uma lista de locations cadastradas em um intervalo de tempo válido, retornando status 200 e uma lista paginada de locations.","Existem locations cadastradas no período informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc - naoDeveConsultarComFimAntesDoInicio","Validar que a API rejeita a consulta quando o parâmetro `fim` é anterior ao `inicio`, retornando status 400 e erro `PayloadLocationConsultaInvalida`.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc - naoDeveConsultarComPaginacaoNegativa","Validar que a API rejeita a consulta quando `paginaAtual` ou `itensPorPagina` são negativos, retornando status 400 e erro de validação.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc - naoDeveConsultarComParametrosInvalidos","Validar que a API rejeita a consulta com parâmetros fora do formato esperado (ex: data inválida), retornando status 400.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc/{id} - deveRecuperarLocationPorIdExistente","Validar que é possível recuperar uma location específica por seu ID, retornando status 200 e os dados completos da location.","Existe uma location cadastrada com o ID informado. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc/{id} - naoDeveRecuperarLocationPorIdInexistente","Validar que a API retorna 404 quando o ID da location não existe, com erro `PayloadLocationNaoEncontrado`.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] GET /api/v1/loc/{id} - naoDeveRecuperarLocationComIdInvalido","Validar que a API rejeita a consulta com um ID mal formatado (ex: caracteres especiais), retornando status 400.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.read`."
+"[api-pix] DELETE /api/v1/loc/{id}/txid - deveDesvincularCobrancaDaLocation","Validar que é possível desvincular uma cobrança (txid) de uma location, retornando status 204 (No Content).","A location existe e está vinculada a uma cobrança. O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`."
+"[api-pix] DELETE /api/v1/loc/{id}/txid - naoDeveDesvincularComIdInexistente","Validar que a API retorna 404 ao tentar desvincular uma cobrança de uma location inexistente.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`."
+"[api-pix] DELETE /api/v1/loc/{id}/txid - naoDeveDesvincularComIdInvalido","Validar que a API rejeita a desvinculação com um ID mal formatado, retornando status 400.","O usuário possui credenciais OAuth2 válidas com escopo `payloadlocation.write`."
+"[api-pix] POST /api/v1/loc - naoDeveCriarLocationSemAutenticacao","Validar que a API rejeita a criação de uma location sem o header `Authorization`, retornando status 403 (`AcessoNegado`).","Nenhuma (teste de segurança). A requisição é feita sem token OAuth2."
+"[api-pix] GET /api/v1/loc - naoDeveConsultarSemAutenticacao","Validar que a API rejeita a consulta de locations sem o header `Authorization`, retornando status 403.","Nenhuma (teste de segurança). A requisição é feita sem token OAuth2."
+```
+
+---
+
+### ✅ Como Usar
+
+1. Copie o conteúdo acima.
+2. Cole em um arquivo chamado `casos_de_teste_payload_location.csv`.
+3. No **Zephyr Scale**, vá para **Test Management > Tests > Import Tests**.
+4. Escolha o formato **CSV** e mapeie os campos:
+   - `Test Case Name` → Name
+   - `Objective` → Objective
+   - `Precondition` → Precondition
+5. Importe e associe ao projeto desejado.
+
+---
+
+Se desejar, posso gerar também:
+- Os mesmos
