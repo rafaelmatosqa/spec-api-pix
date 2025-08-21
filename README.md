@@ -1,6 +1,6 @@
 # spec-api-pix
-Repositório de estudos da spec api pix do bacen - https://github.com/bacen/pix-api/releases/tag/2.8.2
-Documento abaixo gerado a partir de Inteligencia Artificial após análise do Guia de Implementação do Pix Automatico e do Manual de Tempos do Pix do Bacen.
+Repositório de estudos da spec api pix do bacen - https://github.com/bacen/pix-api/releases/tag/2.8.2.
+- Documento abaixo gerado a partir de Inteligencia Artificial após análise do Guia de Implementação do Pix Automatico e do Manual de Tempos do Pix do Bacen.
 
 # 📄 Documento Completo de Fluxos do Pix Automático
 
